@@ -16,13 +16,14 @@ html, body {
 #timer-bar {
   width: 100%;
   height: 100%;
-  background: rgba(30, 30, 30, 0.85);
+  background: rgba(30, 30, 30, 0.85); /* overridden by JS */
   overflow: hidden;
   cursor: grab;
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  gap: 8px;
+  padding: 0 6px;
+  gap: 6px;
+  border-radius: 6px;
 }
 
 #label {

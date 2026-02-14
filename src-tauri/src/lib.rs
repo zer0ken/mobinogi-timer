@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -11,6 +11,42 @@ use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 struct Settings {
     duration_secs: f64,
     cooldown_secs: f64,
+    #[serde(default = "default_hotkey_vk")]
+    hotkey_vk: u32,
+    #[serde(default = "default_hotkey_name")]
+    hotkey_name: String,
+    #[serde(default = "default_overlay_x")]
+    overlay_x: f64,
+    #[serde(default = "default_overlay_y")]
+    overlay_y: f64,
+    #[serde(default = "default_overlay_opacity")]
+    overlay_opacity: f64,
+    #[serde(default = "default_auto_repeat")]
+    auto_repeat: bool,
+}
+
+fn default_hotkey_vk() -> u32 {
+    0xC0
+}
+
+fn default_hotkey_name() -> String {
+    "`".to_string()
+}
+
+fn default_overlay_x() -> f64 {
+    760.0
+}
+
+fn default_overlay_y() -> f64 {
+    20.0
+}
+
+fn default_overlay_opacity() -> f64 {
+    0.85
+}
+
+fn default_auto_repeat() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -18,6 +54,12 @@ impl Default for Settings {
         Self {
             duration_secs: 30.0,
             cooldown_secs: 60.0,
+            hotkey_vk: default_hotkey_vk(),
+            hotkey_name: default_hotkey_name(),
+            overlay_x: default_overlay_x(),
+            overlay_y: default_overlay_y(),
+            overlay_opacity: default_overlay_opacity(),
+            auto_repeat: default_auto_repeat(),
         }
     }
 }
@@ -98,9 +140,16 @@ impl TimerState {
             }
             TimerPhase::Cooldown => {
                 if elapsed >= total {
-                    self.phase = TimerPhase::Idle;
-                    self.start_time = None;
-                    ("idle".into(), 0.0, 0.0)
+                    if self.settings.auto_repeat {
+                        self.phase = TimerPhase::Duration;
+                        self.start_time = Some(Instant::now());
+                        let pct = (1.0 - 0.0 / duration) * 100.0;
+                        ("duration".into(), pct, duration)
+                    } else {
+                        self.phase = TimerPhase::Idle;
+                        self.start_time = None;
+                        ("idle".into(), 0.0, 0.0)
+                    }
                 } else {
                     let pct = (elapsed / total) * 100.0;
                     let remaining = total - elapsed;
@@ -124,12 +173,24 @@ fn save_settings(
     state: tauri::State<'_, Arc<Mutex<TimerState>>>,
     duration_secs: f64,
     cooldown_secs: f64,
+    hotkey_vk: u32,
+    hotkey_name: String,
+    overlay_opacity: f64,
+    auto_repeat: bool,
 ) {
+    let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
         duration_secs,
         cooldown_secs,
+        hotkey_vk,
+        hotkey_name,
+        overlay_x: current_settings.overlay_x,
+        overlay_y: current_settings.overlay_y,
+        overlay_opacity,
+        auto_repeat,
     };
     save_settings_to_file(&new_settings);
+    HOTKEY_VK.store(hotkey_vk, Ordering::Relaxed);
     {
         let mut timer = state.lock().unwrap();
         timer.settings = new_settings;
@@ -137,14 +198,16 @@ fn save_settings(
     app.emit("settings-updated", ()).ok();
 }
 
-// --- Global flag for backtick press (set by keyboard hook) ---
-static BACKTICK_PRESSED: AtomicBool = AtomicBool::new(false);
+// --- Global flag for hotkey press (set by keyboard hook) ---
+static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
+static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = load_settings();
+    HOTKEY_VK.store(settings.hotkey_vk, Ordering::Relaxed);
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings)));
 
     tauri::Builder::default()
@@ -162,11 +225,11 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_millis(16));
 
-                // Check if backtick was pressed via keyboard hook
-                if BACKTICK_PRESSED.swap(false, Ordering::Relaxed) {
+                // Check if hotkey was pressed via keyboard hook
+                if HOTKEY_PRESSED.swap(false, Ordering::Relaxed) {
                     let mut timer = tick_state.lock().unwrap();
                     timer.start();
-                    eprintln!("[mobinogi] Backtick pressed - timer started");
+                    eprintln!("[mobinogi] Hotkey pressed - timer started");
                 }
 
                 let (phase_str, percent, remaining) = {
@@ -206,18 +269,38 @@ pub fn run() {
                 }
             });
 
-            // Set initial mouse pass-through on overlay
+            // Restore overlay position from settings & set initial mouse pass-through
             if let Some(win) = handle.get_webview_window("overlay") {
+                use tauri::{PhysicalPosition, PhysicalSize};
+                win.set_min_size(Some(PhysicalSize::new(1u32, 1u32))).ok();
+                win.set_size(PhysicalSize::new(200u32, 14u32)).ok();
+                let pos = {
+                    let timer = timer_state.lock().unwrap();
+                    (timer.settings.overlay_x, timer.settings.overlay_y)
+                };
+                win.set_position(PhysicalPosition::new(pos.0 as i32, pos.1 as i32)).ok();
                 win.set_ignore_cursor_events(true).ok();
             }
 
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                if window.label() == "settings" {
-                    window.app_handle().exit(0);
+            match event {
+                WindowEvent::CloseRequested { .. } => {
+                    if window.label() == "settings" {
+                        window.app_handle().exit(0);
+                    }
                 }
+                WindowEvent::Moved(position) => {
+                    if window.label() == "overlay" {
+                        let state: tauri::State<'_, Arc<Mutex<TimerState>>> = window.state();
+                        let mut timer = state.lock().unwrap();
+                        timer.settings.overlay_x = position.x as f64;
+                        timer.settings.overlay_y = position.y as f64;
+                        save_settings_to_file(&timer.settings);
+                    }
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
@@ -241,7 +324,6 @@ fn install_keyboard_hook() {
 
     const WH_KEYBOARD_LL: c_int = 13;
     const WM_KEYDOWN: WPARAM = 0x0100;
-    const VK_OEM_3: DWORD = 0xC0; // backtick/tilde key
 
     #[repr(C)]
     struct KBDLLHOOKSTRUCT {
@@ -292,8 +374,8 @@ fn install_keyboard_hook() {
     ) -> LRESULT {
         if n_code >= 0 && w_param == WM_KEYDOWN {
             let kb = &*(l_param as *const KBDLLHOOKSTRUCT);
-            if kb.vk_code == VK_OEM_3 {
-                BACKTICK_PRESSED.store(true, Ordering::Relaxed);
+            if kb.vk_code == HOTKEY_VK.load(Ordering::Relaxed) {
+                HOTKEY_PRESSED.store(true, Ordering::Relaxed);
             }
         }
         CallNextHookEx(ptr::null_mut(), n_code, w_param, l_param)
