@@ -273,7 +273,7 @@ pub fn run() {
             if let Some(win) = handle.get_webview_window("overlay") {
                 use tauri::{PhysicalPosition, PhysicalSize};
                 win.set_min_size(Some(PhysicalSize::new(1u32, 1u32))).ok();
-                win.set_size(PhysicalSize::new(200u32, 14u32)).ok();
+                win.set_size(PhysicalSize::new(200u32, 24u32)).ok();
                 let pos = {
                     let timer = timer_state.lock().unwrap();
                     (timer.settings.overlay_x, timer.settings.overlay_y)
