@@ -1,0 +1,43 @@
+{
+  "productName": "Mobinogi Timer",
+  "version": "1.0.0",
+  "identifier": "com.mobinogi.timer",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Mobinogi Timer",
+        "url": "settings.html",
+        "width": 300,
+        "height": 260,
+        "resizable": false,
+        "center": true
+      },
+      {
+        "label": "overlay",
+        "title": "Overlay",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "width": 200,
+        "height": 24,
+        "x": 760,
+        "y": 20,
+        "resizable": false,
+        "skipTaskbar": true,
+        "visible": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mobinogi Timer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #e0e0e0;
+    }
+    h2 { margin-bottom: 16px; font-size: 16px; }
+    .field {
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    label {
+      width: 100px;
+      font-size: 13px;
+    }
+    input[type="number"] {
+      width: 80px;
+      padding: 4px 8px;
+      background: #2d2d2d;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 13px;
+    }
+    .unit { font-size: 12px; color: #999; }
+    .buttons {
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      padding: 6px 16px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #333;
+      color: #e0e0e0;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover { background: #444; }
+    button.primary {
+      background: #4caf50;
+      border-color: #4caf50;
+      color: #fff;
+    }
+    button.primary:hover { background: #45a049; }
+    .saved {
+      font-size: 12px;
+      color: #4caf50;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .saved.show { opacity: 1; }
+    .hint {
+      margin-top: 16px;
+      font-size: 11px;
+      color: #777;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <h2>Mobinogi Timer</h2>
+  <div class="field">
+    <label for="duration">지속시간</label>
+    <input type="number" id="duration" min="1" max="600" value="30">
+    <span class="unit">초</span>
+  </div>
+  <div class="field">
+    <label for="cooldown">쿨다운</label>
+    <input type="number" id="cooldown" min="1" max="600" value="60">
+    <span class="unit">초</span>
+  </div>
+  <div class="buttons">
+    <button id="save" class="primary">저장</button>
+    <span id="saved-msg" class="saved">저장됨!</span>
+  </div>
+  <div class="hint">
+    ` (백틱) 키: 타이머 시작/재시작<br>
+    설정창 선택 상태에서 오버레이 드래그 가능<br>
+    이 창을 닫으면 앱이 종료됩니다.
+  </div>
+  <script>
+    const { invoke } = window.__TAURI__.core;
+
+    const durationInput = document.getElementById("duration");
+    const cooldownInput = document.getElementById("cooldown");
+    const savedMsg = document.getElementById("saved-msg");
+
+    invoke("get_settings").then((settings) => {
+      durationInput.value = settings.duration_secs;
+      cooldownInput.value = settings.cooldown_secs;
+    });
+
+    document.getElementById("save").addEventListener("click", async () => {
+      const duration = parseInt(durationInput.value, 10);
+      const cooldown = parseInt(cooldownInput.value, 10);
+      if (duration > 0 && cooldown > 0) {
+        await invoke("save_settings", {
+          durationSecs: duration,
+          cooldownSecs: cooldown,
+        });
+        savedMsg.classList.add("show");
+        setTimeout(() => savedMsg.classList.remove("show"), 1500);
+      }
+    });
+  </script>
+</body>
+</html>
