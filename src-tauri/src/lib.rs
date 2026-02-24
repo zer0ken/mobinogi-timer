@@ -10,26 +10,24 @@ use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 // --- Emblem Data ---
 
 struct EmblemInfo {
-    key: &'static str,
     buff_key: u32,
     duration: f64,
+    name: &'static str,
 }
 
 const EMBLEMS: &[EmblemInfo] = &[
-    EmblemInfo { key: "grand_mage", buff_key: 122806656, duration: 20.0 },
-    EmblemInfo { key: "scattering_sword", buff_key: 355098955, duration: 35.0 },
-    EmblemInfo { key: "cracked_earth", buff_key: 1184371696, duration: 35.0 },
-    EmblemInfo { key: "distant_light", buff_key: 1590198662, duration: 20.0 },
-    EmblemInfo { key: "broken_sky", buff_key: 1703435864, duration: 20.0 },
-    EmblemInfo { key: "mountain_lord", buff_key: 2024838942, duration: 20.0 },
+    EmblemInfo { buff_key: 122806656, duration: 20.0, name: "대마법사" },
+    EmblemInfo { buff_key: 122806657, duration: 20.0, name: "무자비한 포식자" },
+    EmblemInfo { buff_key: 122806658, duration: 20.0, name: "녹아내린 대지" },
+    EmblemInfo { buff_key: 355098955, duration: 35.0, name: "흩날리는 검" },
+    EmblemInfo { buff_key: 1184371696, duration: 35.0, name: "갈라진 땅" },
+    EmblemInfo { buff_key: 1590198662, duration: 20.0, name: "아득한 빛" },
+    EmblemInfo { buff_key: 1703435864, duration: 20.0, name: "부서진 하늘" },
+    EmblemInfo { buff_key: 2024838942, duration: 20.0, name: "산맥 군주" },
 ];
 
-fn get_emblem(name: &str) -> Option<&'static EmblemInfo> {
-    EMBLEMS.iter().find(|e| e.key == name)
-}
-
-fn compute_duration(emblem_name: &str) -> f64 {
-    get_emblem(emblem_name).map(|e| e.duration).unwrap_or(20.0)
+fn find_emblem_by_buff_key(buff_key: u32) -> Option<&'static EmblemInfo> {
+    EMBLEMS.iter().find(|e| e.buff_key == buff_key)
 }
 
 fn compute_cooldown(blind_seer: &str) -> f64 {
@@ -45,14 +43,8 @@ fn compute_cooldown(blind_seer: &str) -> f64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Settings {
-    #[serde(default = "default_emblem_name")]
-    emblem_name: String,
     #[serde(default = "default_blind_seer")]
     blind_seer: String,
-    #[serde(default = "default_duration_secs")]
-    duration_secs: f64,
-    #[serde(default = "default_cooldown_secs")]
-    cooldown_secs: f64,
     #[serde(default = "default_hotkey_vk")]
     hotkey_vk: u32,
     #[serde(default = "default_hotkey_name")]
@@ -63,6 +55,8 @@ struct Settings {
     overlay_y: f64,
     #[serde(default = "default_overlay_opacity")]
     overlay_opacity: f64,
+    #[serde(default = "default_overlay_width")]
+    overlay_width: u32,
     #[serde(default = "default_auto_repeat")]
     auto_repeat: bool,
     #[serde(default)]
@@ -71,29 +65,25 @@ struct Settings {
     network_interface: String,
 }
 
-fn default_emblem_name() -> String { "grand_mage".to_string() }
 fn default_blind_seer() -> String { "none".to_string() }
-fn default_duration_secs() -> f64 { 20.0 }
-fn default_cooldown_secs() -> f64 { 90.0 }
 fn default_hotkey_vk() -> u32 { 0xC0 }
 fn default_hotkey_name() -> String { "`".to_string() }
 fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.85 }
+fn default_overlay_width() -> u32 { 200 }
 fn default_auto_repeat() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            emblem_name: default_emblem_name(),
             blind_seer: default_blind_seer(),
-            duration_secs: default_duration_secs(),
-            cooldown_secs: default_cooldown_secs(),
             hotkey_vk: default_hotkey_vk(),
             hotkey_name: default_hotkey_name(),
             overlay_x: default_overlay_x(),
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
+            overlay_width: default_overlay_width(),
             auto_repeat: default_auto_repeat(),
             packet_capture_enabled: false,
             network_interface: String::new(),
@@ -110,14 +100,10 @@ fn settings_path() -> std::path::PathBuf {
 }
 
 fn load_settings() -> Settings {
-    let mut settings: Settings = fs::read_to_string(settings_path())
+    fs::read_to_string(settings_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    // Recompute duration/cooldown from emblem/blind_seer to ensure consistency
-    settings.duration_secs = compute_duration(&settings.emblem_name);
-    settings.cooldown_secs = compute_cooldown(&settings.blind_seer);
-    settings
+        .unwrap_or_default()
 }
 
 fn save_settings_to_file(settings: &Settings) {
@@ -135,66 +121,92 @@ enum TimerPhase {
     Cooldown,
 }
 
-#[derive(Debug, Clone)]
 struct TimerState {
     phase: TimerPhase,
-    start_time: Option<Instant>,
+    duration_remaining: f64,
+    cooldown_remaining: f64,
+    duration_total: f64,
+    cooldown_total: f64,
+    last_tick: Instant,
+    active_emblem: String,
     settings: Settings,
+    capture_stop: Arc<AtomicBool>,
 }
 
 impl TimerState {
     fn new(settings: Settings) -> Self {
         Self {
             phase: TimerPhase::Idle,
-            start_time: None,
+            duration_remaining: 0.0,
+            cooldown_remaining: 0.0,
+            duration_total: 0.0,
+            cooldown_total: 0.0,
+            last_tick: Instant::now(),
+            active_emblem: String::new(),
             settings,
+            capture_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
     fn start(&mut self) {
-        self.phase = TimerPhase::Duration;
-        self.start_time = Some(Instant::now());
+        self.active_emblem = "각성".to_string();
+        self.start_timer(20.0);
     }
 
-    fn tick(&mut self) -> (String, f64, f64) {
-        let Some(start) = self.start_time else {
-            return ("idle".into(), 0.0, 0.0);
-        };
+    fn start_with_emblem(&mut self, dur: f64, name: &str) {
+        self.active_emblem = name.to_string();
+        self.start_timer(dur);
+    }
 
-        let elapsed = start.elapsed().as_secs_f64();
-        let duration = self.settings.duration_secs;
-        let total = self.settings.cooldown_secs;
+    fn start_timer(&mut self, dur: f64) {
+        let total_cd = compute_cooldown(&self.settings.blind_seer);
+        let wait = total_cd - dur;
+        self.duration_remaining = dur;
+        self.cooldown_remaining = wait;
+        self.duration_total = dur;
+        self.cooldown_total = wait;
+        self.phase = TimerPhase::Duration;
+        self.last_tick = Instant::now();
+    }
 
+    fn tick(&mut self) -> (String, f64, f64, String) {
+        if self.phase == TimerPhase::Idle {
+            return ("idle".into(), 0.0, 0.0, String::new());
+        }
+
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_tick).as_secs_f64();
+        self.last_tick = now;
+
+        let emblem = self.active_emblem.clone();
         match self.phase {
-            TimerPhase::Idle => ("idle".into(), 0.0, 0.0),
+            TimerPhase::Idle => unreachable!(),
             TimerPhase::Duration => {
-                if elapsed >= duration {
+                self.duration_remaining -= dt;
+                if self.duration_remaining <= 0.0 {
+                    self.cooldown_remaining += self.duration_remaining;
+                    self.duration_remaining = 0.0;
                     self.phase = TimerPhase::Cooldown;
-                    let remaining = total - elapsed;
-                    let pct = (elapsed / total) * 100.0;
-                    ("cooldown".into(), pct, remaining.max(0.0))
+                    let pct = (1.0 - self.cooldown_remaining / self.cooldown_total) * 100.0;
+                    ("cooldown".into(), pct, self.cooldown_remaining.max(0.0), emblem)
                 } else {
-                    let pct = (1.0 - elapsed / duration) * 100.0;
-                    let remaining = duration - elapsed;
-                    ("duration".into(), pct, remaining.max(0.0))
+                    let pct = (self.duration_remaining / self.duration_total) * 100.0;
+                    ("duration".into(), pct, self.duration_remaining, emblem)
                 }
             }
             TimerPhase::Cooldown => {
-                if elapsed >= total {
+                self.cooldown_remaining -= dt;
+                if self.cooldown_remaining <= 0.0 {
                     if self.settings.auto_repeat && !self.settings.packet_capture_enabled {
-                        self.phase = TimerPhase::Duration;
-                        self.start_time = Some(Instant::now());
-                        let pct = (1.0 - 0.0 / duration) * 100.0;
-                        ("duration".into(), pct, duration)
+                        self.start();
+                        ("duration".into(), 100.0, self.duration_remaining, emblem)
                     } else {
                         self.phase = TimerPhase::Idle;
-                        self.start_time = None;
-                        ("idle".into(), 0.0, 0.0)
+                        ("idle".into(), 0.0, 0.0, emblem)
                     }
                 } else {
-                    let pct = (elapsed / total) * 100.0;
-                    let remaining = total - elapsed;
-                    ("cooldown".into(), pct, remaining.max(0.0))
+                    let pct = (1.0 - self.cooldown_remaining / self.cooldown_total) * 100.0;
+                    ("cooldown".into(), pct, self.cooldown_remaining, emblem)
                 }
             }
         }
@@ -212,52 +224,72 @@ fn get_settings(state: tauri::State<'_, Arc<Mutex<TimerState>>>) -> Settings {
 fn save_settings(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<TimerState>>>,
-    emblem_name: String,
     blind_seer: String,
     hotkey_vk: u32,
     hotkey_name: String,
     overlay_opacity: f64,
+    overlay_width: u32,
     auto_repeat: bool,
     packet_capture_enabled: bool,
     network_interface: String,
 ) {
-    let duration_secs = compute_duration(&emblem_name);
-    let cooldown_secs = compute_cooldown(&blind_seer);
-
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
-        emblem_name,
         blind_seer,
-        duration_secs,
-        cooldown_secs,
         hotkey_vk,
         hotkey_name,
         overlay_x: current_settings.overlay_x,
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
+        overlay_width,
         auto_repeat,
         packet_capture_enabled,
         network_interface,
     };
+
     save_settings_to_file(&new_settings);
     HOTKEY_VK.store(new_settings.hotkey_vk, Ordering::Relaxed);
     {
         let mut timer = state.lock().unwrap();
+        let capture_changed = new_settings.packet_capture_enabled != current_settings.packet_capture_enabled
+            || new_settings.network_interface != current_settings.network_interface;
+
+        if capture_changed {
+            timer.capture_stop.store(true, Ordering::Relaxed);
+
+            if new_settings.packet_capture_enabled {
+                let stop = Arc::new(AtomicBool::new(false));
+                timer.capture_stop = stop.clone();
+                let iface = new_settings.network_interface.clone();
+                std::thread::spawn(move || {
+                    packet::start_capture(&iface, stop);
+                });
+            }
+        }
+
         timer.settings = new_settings;
     }
     app.emit("settings-updated", ()).ok();
 }
 
 #[tauri::command]
-fn list_interfaces() -> Vec<serde_json::Value> {
-    packet::list_devices()
+fn list_interfaces() -> serde_json::Value {
+    let default_name = packet::find_default_device_name();
+
+    let devices: Vec<serde_json::Value> = packet::list_devices()
         .into_iter()
         .map(|(name, desc)| serde_json::json!({ "name": name, "desc": desc }))
-        .collect()
+        .collect();
+
+    serde_json::json!({
+        "devices": devices,
+        "default": default_name,
+    })
 }
 
-// --- Global flag for hotkey press (set by keyboard hook or packet capture) ---
+// --- Global flags ---
 pub static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
+pub static DETECTED_BUFF_KEY: AtomicU32 = AtomicU32::new(0);
 static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 
 // --- App Setup ---
@@ -267,20 +299,19 @@ pub fn run() {
     let settings = load_settings();
     HOTKEY_VK.store(settings.hotkey_vk, Ordering::Relaxed);
 
+    let timer_state = Arc::new(Mutex::new(TimerState::new(settings.clone())));
+
     // Start packet capture thread if enabled
     if settings.packet_capture_enabled {
-        let buff_key = get_emblem(&settings.emblem_name)
-            .map(|e| e.buff_key)
-            .unwrap_or(0);
         let iface = settings.network_interface.clone();
-        if buff_key != 0 {
-            std::thread::spawn(move || {
-                packet::start_capture(buff_key, &iface);
-            });
-        }
+        let stop = {
+            let ts = timer_state.lock().unwrap();
+            ts.capture_stop.clone()
+        };
+        std::thread::spawn(move || {
+            packet::start_capture(&iface, stop);
+        });
     }
-
-    let timer_state = Arc::new(Mutex::new(TimerState::new(settings)));
 
     tauri::Builder::default()
         .manage(timer_state.clone())
@@ -288,7 +319,7 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // --- Global keyboard hook (works without focus, even with IME) ---
+            // --- Global keyboard hook ---
             install_keyboard_hook();
 
             // --- Timer tick loop (16ms) ---
@@ -297,14 +328,24 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_millis(16));
 
-                // Check if hotkey was pressed via keyboard hook or packet capture
+                // Check for auto-detected buff from packet capture
+                let detected = DETECTED_BUFF_KEY.swap(0, Ordering::Relaxed);
+                if detected != 0 {
+                    if let Some(info) = find_emblem_by_buff_key(detected) {
+                        let mut timer = tick_state.lock().unwrap();
+                        timer.start_with_emblem(info.duration, info.name);
+                        eprintln!("[mobinogi] Timer auto-started ({}, dur={}s)", info.name, info.duration);
+                    }
+                }
+
+                // Check for manual hotkey
                 if HOTKEY_PRESSED.swap(false, Ordering::Relaxed) {
                     let mut timer = tick_state.lock().unwrap();
                     timer.start();
-                    eprintln!("[mobinogi] Timer started");
+                    eprintln!("[mobinogi] Timer started (manual)");
                 }
 
-                let (phase_str, percent, remaining) = {
+                let (phase_str, percent, remaining, emblem) = {
                     let mut timer = tick_state.lock().unwrap();
                     timer.tick()
                 };
@@ -312,7 +353,7 @@ pub fn run() {
                 tick_handle
                     .emit(
                         "timer-update",
-                        serde_json::json!({ "state": phase_str, "percent": percent, "remaining": remaining }),
+                        serde_json::json!({ "state": phase_str, "percent": percent, "remaining": remaining, "emblem": emblem }),
                     )
                     .ok();
             });
@@ -343,9 +384,7 @@ pub fn run() {
 
             // Restore overlay position from settings & set initial mouse pass-through
             if let Some(win) = handle.get_webview_window("overlay") {
-                use tauri::{PhysicalPosition, PhysicalSize};
-                win.set_min_size(Some(PhysicalSize::new(1u32, 1u32))).ok();
-                win.set_size(PhysicalSize::new(200u32, 24u32)).ok();
+                use tauri::PhysicalPosition;
                 let pos = {
                     let timer = timer_state.lock().unwrap();
                     (timer.settings.overlay_x, timer.settings.overlay_y)

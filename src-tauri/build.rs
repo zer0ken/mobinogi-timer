@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rustc-link-search=native=C:\\npcap-sdk\\Lib\\x64");
+
     let windows_attr = tauri_build::WindowsAttributes::new().app_manifest(
         r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>
