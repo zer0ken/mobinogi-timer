@@ -150,8 +150,15 @@
 
     // Check Npcap
     function recheckNpcap() {
+      const banner = document.getElementById("npcap-banner");
+      banner.style.display = "none";
       invoke("check_npcap").then((ok) => {
-        document.getElementById("npcap-banner").style.display = ok ? "none" : "flex";
+        setTimeout(() => {
+          banner.style.display = ok ? "none" : "flex";
+          if (ok) {
+            loadNetworkInterfaces();
+          }
+        }, 100);
       });
     }
     recheckNpcap();
@@ -181,23 +188,27 @@
     });
 
     // Load network interfaces
-    invoke("list_interfaces").then((result) => {
-      const { devices, default: defaultName } = result;
-      for (const d of devices) {
-        const opt = document.createElement("option");
-        opt.value = d.name;
-        opt.textContent = d.desc || d.name;
-        interfaceSelect.appendChild(opt);
-      }
-      invoke("get_settings").then((s) => {
-        if (s.network_interface && devices.some(d => d.name === s.network_interface)) {
-          interfaceSelect.value = s.network_interface;
-        } else {
-          interfaceSelect.value = defaultName;
-          saveSettings();
+    function loadNetworkInterfaces() {
+      interfaceSelect.innerHTML = "";
+      invoke("list_interfaces").then((result) => {
+        const { devices, default: defaultName } = result;
+        for (const d of devices) {
+          const opt = document.createElement("option");
+          opt.value = d.name;
+          opt.textContent = d.desc || d.name;
+          interfaceSelect.appendChild(opt);
         }
+        invoke("get_settings").then((s) => {
+          if (s.network_interface && devices.some(d => d.name === s.network_interface)) {
+            interfaceSelect.value = s.network_interface;
+          } else {
+            interfaceSelect.value = defaultName;
+            saveSettings();
+          }
+        });
       });
-    });
+    }
+    loadNetworkInterfaces();
 
   </script>
 </body>

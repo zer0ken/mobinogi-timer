@@ -218,7 +218,7 @@ fn save_settings(
     save_settings_to_file(&new_settings);
     {
         let mut timer = state.lock().unwrap();
-        if new_settings.network_interface != current_settings.network_interface {
+        if new_settings.network_interface != current_settings.network_interface && is_npcap_installed() {
             timer.capture_stop.store(true, Ordering::Relaxed);
             let stop = Arc::new(AtomicBool::new(false));
             timer.capture_stop = stop.clone();
@@ -234,6 +234,9 @@ fn save_settings(
 
 #[tauri::command]
 fn list_interfaces() -> serde_json::Value {
+    if !is_npcap_installed() {
+        return serde_json::json!({ "devices": [], "default": "" });
+    }
     let default_name = packet::find_default_device_name();
 
     let devices: Vec<serde_json::Value> = packet::list_devices()
@@ -247,9 +250,15 @@ fn list_interfaces() -> serde_json::Value {
     })
 }
 
+fn is_npcap_installed() -> bool {
+    let sys = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+    let base = std::path::Path::new(&sys).join("System32");
+    base.join("Npcap").join("wpcap.dll").exists() || base.join("wpcap.dll").exists()
+}
+
 #[tauri::command]
 fn check_npcap() -> bool {
-    pcap::Device::list().is_ok()
+    is_npcap_installed()
 }
 
 #[tauri::command]
@@ -303,8 +312,8 @@ pub fn run() {
     let settings = load_settings();
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings.clone())));
 
-    // Start packet capture thread
-    {
+    // Start packet capture thread (only if Npcap is installed)
+    if is_npcap_installed() {
         let iface = settings.network_interface.clone();
         let stop = {
             let ts = timer_state.lock().unwrap();
