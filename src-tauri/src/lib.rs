@@ -2,7 +2,7 @@ mod packet;
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -262,8 +262,12 @@ fn open_url(url: String) {
     { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
 }
 
-// --- Global flags ---
-pub static DETECTED_BUFF_KEY: AtomicU32 = AtomicU32::new(0);
+// --- Global detected buff (packet → tick loop) ---
+pub struct DetectedBuff {
+    pub buff_key: u32,
+    pub detected_at: Instant,
+}
+pub static DETECTED_BUFF: Mutex<Option<DetectedBuff>> = Mutex::new(None);
 
 // --- App Setup ---
 
@@ -297,14 +301,13 @@ pub fn run() {
                 std::thread::sleep(std::time::Duration::from_millis(16));
 
                 // Check for auto-detected buff from packet capture
-                let detected = DETECTED_BUFF_KEY.swap(0, Ordering::Relaxed);
-                if detected != 0 {
-                    let elapsed_us = packet::DETECTED_BUFF_ELAPSED_US.swap(0, Ordering::Relaxed);
-                    let elapsed_secs = elapsed_us as f64 / 1_000_000.0;
-                    if let Some(info) = find_emblem_by_buff_key(detected) {
+                let detected = DETECTED_BUFF.lock().unwrap().take();
+                if let Some(det) = detected {
+                    let elapsed_secs = det.detected_at.elapsed().as_secs_f64();
+                    if let Some(info) = find_emblem_by_buff_key(det.buff_key) {
                         let adjusted_dur = (info.duration - elapsed_secs).max(0.0);
-                        let mut timer = tick_state.lock().unwrap();
-                        if timer.phase == TimerPhase::Idle && adjusted_dur > 0.0 {
+                        if adjusted_dur > 0.0 {
+                            let mut timer = tick_state.lock().unwrap();
                             timer.start_with_emblem(adjusted_dur, info.duration, elapsed_secs, info.name);
                         }
                     }

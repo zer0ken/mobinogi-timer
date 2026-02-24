@@ -47,7 +47,7 @@ listen("settings-updated", () => {
 
 listen("timer-update", (event) => {
   const { state, percent, remaining, emblem } = event.payload;
-  const secs = Math.ceil(remaining);
+  const secs = Math.floor(remaining);
 
   if (state === "idle") {
     progress.className = "idle";

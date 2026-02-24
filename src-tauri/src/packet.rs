@@ -1,5 +1,5 @@
-use crate::DETECTED_BUFF_KEY;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use crate::{DetectedBuff, DETECTED_BUFF};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -22,8 +22,6 @@ pub const GRAND_MAGE_KEY: u32 = 122806656;
 pub const MERCILESS_PREDATOR_KEY: u32 = 122806657; // virtual
 pub const MELTED_EARTH_KEY: u32 = 122806658;       // virtual
 
-/// Microseconds elapsed since a buffered buff was first detected (0 for immediate detection).
-pub static DETECTED_BUFF_ELAPSED_US: AtomicU32 = AtomicU32::new(0);
 
 // --- Block iterator ---
 
@@ -237,9 +235,8 @@ fn process_buffer(buffer: &mut Vec<u8>, state: &mut CaptureState) {
     }
 }
 
-fn emit_buff(buff_key: u32, elapsed_us: u32) {
-    DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
-    DETECTED_BUFF_ELAPSED_US.store(elapsed_us, Ordering::Relaxed);
+fn emit_buff(buff_key: u32, detected_at: Instant) {
+    *DETECTED_BUFF.lock().unwrap() = Some(DetectedBuff { buff_key, detected_at });
 }
 
 fn process_block(block: &[u8], state: &mut CaptureState) {
@@ -306,8 +303,7 @@ fn process_block(block: &[u8], state: &mut CaptureState) {
         state.buff_queue.retain(|b| now.duration_since(b.detected_at).as_secs_f64() < MAX_BUFF_AGE_SECS);
 
         if let Some(idx) = state.buff_queue.iter().position(|b| state.candidates.contains(&b.user_id)) {
-            let elapsed_us = state.buff_queue[idx].detected_at.elapsed().as_micros() as u32;
-            emit_buff(state.buff_queue[idx].buff_key, elapsed_us);
+            emit_buff(state.buff_queue[idx].buff_key, state.buff_queue[idx].detected_at);
             state.buff_queue.drain(..=idx);
         }
     }
