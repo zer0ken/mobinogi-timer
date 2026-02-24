@@ -6,7 +6,7 @@
   <title>Mobinogi Timer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { overflow: hidden; }
+    html, body { overflow-x: hidden; overflow-y: auto; }
     body {
       font-family: 'Segoe UI', sans-serif;
       padding: 20px;
@@ -37,10 +37,36 @@
     .range-value { font-size: 12px; color: #999; min-width: 32px; }
     hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
     .hint { margin-top: 12px; font-size: 11px; color: #777; line-height: 1.6; }
+    .npcap-banner {
+      background: #4a2020;
+      border: 1px solid #e53935;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #ffcdd2;
+      line-height: 1.6;
+      display: none;
+      align-items: start;
+      gap: 8px;
+    }
+    .npcap-banner a { color: #ef9a9a; }
+    .npcap-banner > span { flex: 1; }
+    .npcap-refresh {
+      background: none; border: 1px solid #ef9a9a; border-radius: 3px;
+      color: #ef9a9a; font-size: 11px; padding: 2px 8px; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .npcap-refresh:hover { background: rgba(255,255,255,0.1); }
   </style>
 </head>
 <body>
   <h2>모비노기 각성 타이머</h2>
+
+  <div id="npcap-banner" class="npcap-banner">
+    <span>패킷 캡쳐를 위해 <a href="#" onclick="invoke('open_url',{url:'https://npcap.com/dist/npcap-1.87.exe'});return false;">Npcap</a>을 설치해야 합니다.</span>
+    <button class="npcap-refresh" onclick="recheckNpcap()">재확인</button>
+  </div>
 
   <!-- Section 1: Rune Settings -->
   <div class="field">
@@ -78,7 +104,8 @@
   <div class="hint" style="margin-top: 24px;">
     이 창을 선택한 상태에서 오버레이를 드래그할 수 있습니다.<br>
     이 창을 닫으면 앱이 종료됩니다.<br>
-    문제 제보나 기능 제안은 <a href="#" onclick="invoke('open_url',{url:'https://github.com/zer0ken/mobinogi-timer/issues'});return false;" style="color:#888;">여기</a>에 남겨주세요.
+    문제 제보나 기능 제안은 <a href="#" onclick="invoke('open_url',{url:'https://github.com/zer0ken/mobinogi-timer/issues'});return false;" style="color:#888;">여기</a>에 남겨주세요.<br>
+    <a href="#" onclick="document.getElementById('npcap-banner').style.display='flex';return false;" style="color:#888;">Npcap 설치</a>
   </div>
 
   <script>
@@ -119,6 +146,14 @@
     }
     opacityInput.addEventListener("wheel", (e) => wheelStep(opacityInput, e));
     overlayWidthInput.addEventListener("wheel", (e) => wheelStep(overlayWidthInput, e));
+
+    // Check Npcap
+    function recheckNpcap() {
+      invoke("check_npcap").then((ok) => {
+        document.getElementById("npcap-banner").style.display = ok ? "none" : "flex";
+      });
+    }
+    recheckNpcap();
 
     // Load settings
     invoke("get_settings").then((s) => {

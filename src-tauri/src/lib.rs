@@ -60,8 +60,8 @@ struct Settings {
 fn default_blind_seer() -> String { "none".to_string() }
 fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
-fn default_overlay_opacity() -> f64 { 0.85 }
-fn default_overlay_width() -> u32 { 200 }
+fn default_overlay_opacity() -> f64 { 0.80 }
+fn default_overlay_width() -> u32 { 100 }
 
 
 impl Default for Settings {
@@ -248,6 +248,11 @@ fn list_interfaces() -> serde_json::Value {
 }
 
 #[tauri::command]
+fn check_npcap() -> bool {
+    pcap::Device::list().is_ok()
+}
+
+#[tauri::command]
 fn open_url(url: String) {
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn(); }
@@ -281,7 +286,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(timer_state.clone())
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, open_url])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, check_npcap, open_url])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -296,8 +301,10 @@ pub fn run() {
                 if detected != 0 {
                     if let Some(info) = find_emblem_by_buff_key(detected) {
                         let mut timer = tick_state.lock().unwrap();
-                        timer.start_with_emblem(info.duration, info.name);
-                        eprintln!("[mobinogi] Timer auto-started ({}, dur={}s)", info.name, info.duration);
+                        if timer.phase == TimerPhase::Idle {
+                            timer.start_with_emblem(info.duration, info.name);
+                            eprintln!("[mobinogi] Timer auto-started ({}, dur={}s)", info.name, info.duration);
+                        }
                     }
                 }
 

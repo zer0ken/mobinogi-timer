@@ -20,7 +20,7 @@
         "title": "Mobinogi Timer",
         "url": "settings.html",
         "width": 400,
-        "height": 300,
+        "height": 400,
         "resizable": false,
         "center": true
       },
