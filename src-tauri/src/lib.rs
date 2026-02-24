@@ -45,10 +45,6 @@ fn compute_cooldown(blind_seer: &str) -> f64 {
 struct Settings {
     #[serde(default = "default_blind_seer")]
     blind_seer: String,
-    #[serde(default = "default_hotkey_vk")]
-    hotkey_vk: u32,
-    #[serde(default = "default_hotkey_name")]
-    hotkey_name: String,
     #[serde(default = "default_overlay_x")]
     overlay_x: f64,
     #[serde(default = "default_overlay_y")]
@@ -59,8 +55,6 @@ struct Settings {
     overlay_width: u32,
     #[serde(default = "default_overlay_animation")]
     overlay_animation: bool,
-    #[serde(default = "default_auto_repeat")]
-    auto_repeat: bool,
     #[serde(default)]
     packet_capture_enabled: bool,
     #[serde(default)]
@@ -68,27 +62,21 @@ struct Settings {
 }
 
 fn default_blind_seer() -> String { "none".to_string() }
-fn default_hotkey_vk() -> u32 { 0xC0 }
-fn default_hotkey_name() -> String { "`".to_string() }
 fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.85 }
 fn default_overlay_width() -> u32 { 200 }
 fn default_overlay_animation() -> bool { true }
-fn default_auto_repeat() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             blind_seer: default_blind_seer(),
-            hotkey_vk: default_hotkey_vk(),
-            hotkey_name: default_hotkey_name(),
             overlay_x: default_overlay_x(),
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
             overlay_animation: default_overlay_animation(),
-            auto_repeat: default_auto_repeat(),
             packet_capture_enabled: false,
             network_interface: String::new(),
         }
@@ -152,11 +140,6 @@ impl TimerState {
         }
     }
 
-    fn start(&mut self) {
-        self.active_emblem = "각성".to_string();
-        self.start_timer(20.0);
-    }
-
     fn start_with_emblem(&mut self, dur: f64, name: &str) {
         self.active_emblem = name.to_string();
         self.start_timer(dur);
@@ -201,13 +184,8 @@ impl TimerState {
             TimerPhase::Cooldown => {
                 self.cooldown_remaining -= dt;
                 if self.cooldown_remaining <= 0.0 {
-                    if self.settings.auto_repeat && !self.settings.packet_capture_enabled {
-                        self.start();
-                        ("duration".into(), 100.0, self.duration_remaining, emblem)
-                    } else {
-                        self.phase = TimerPhase::Idle;
-                        ("idle".into(), 0.0, 0.0, emblem)
-                    }
+                    self.phase = TimerPhase::Idle;
+                    ("idle".into(), 0.0, 0.0, emblem)
                 } else {
                     let pct = (1.0 - self.cooldown_remaining / self.cooldown_total) * 100.0;
                     ("cooldown".into(), pct, self.cooldown_remaining, emblem)
@@ -229,32 +207,25 @@ fn save_settings(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<TimerState>>>,
     blind_seer: String,
-    hotkey_vk: u32,
-    hotkey_name: String,
     overlay_opacity: f64,
     overlay_width: u32,
     overlay_animation: bool,
-    auto_repeat: bool,
     packet_capture_enabled: bool,
     network_interface: String,
 ) {
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
         blind_seer,
-        hotkey_vk,
-        hotkey_name,
         overlay_x: current_settings.overlay_x,
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         overlay_width,
         overlay_animation,
-        auto_repeat,
         packet_capture_enabled,
         network_interface,
     };
 
     save_settings_to_file(&new_settings);
-    HOTKEY_VK.store(new_settings.hotkey_vk, Ordering::Relaxed);
     {
         let mut timer = state.lock().unwrap();
         let capture_changed = new_settings.packet_capture_enabled != current_settings.packet_capture_enabled
@@ -294,17 +265,13 @@ fn list_interfaces() -> serde_json::Value {
 }
 
 // --- Global flags ---
-pub static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
 pub static DETECTED_BUFF_KEY: AtomicU32 = AtomicU32::new(0);
-static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = load_settings();
-    HOTKEY_VK.store(settings.hotkey_vk, Ordering::Relaxed);
-
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings.clone())));
 
     // Start packet capture thread if enabled
@@ -325,9 +292,6 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // --- Global keyboard hook ---
-            install_keyboard_hook();
-
             // --- Timer tick loop (16ms) ---
             let tick_state = timer_state.clone();
             let tick_handle = handle.clone();
@@ -342,13 +306,6 @@ pub fn run() {
                         timer.start_with_emblem(info.duration, info.name);
                         eprintln!("[mobinogi] Timer auto-started ({}, dur={}s)", info.name, info.duration);
                     }
-                }
-
-                // Check for manual hotkey
-                if HOTKEY_PRESSED.swap(false, Ordering::Relaxed) {
-                    let mut timer = tick_state.lock().unwrap();
-                    timer.start();
-                    eprintln!("[mobinogi] Timer started (manual)");
                 }
 
                 let (phase_str, percent, remaining, emblem) = {
@@ -422,97 +379,4 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-// --- Platform-specific: Low-level keyboard hook ---
-
-#[cfg(target_os = "windows")]
-fn install_keyboard_hook() {
-    use std::ffi::c_int;
-    use std::ptr;
-
-    type WPARAM = usize;
-    type LPARAM = isize;
-    type LRESULT = isize;
-    type DWORD = u32;
-    type HHOOK = *mut std::ffi::c_void;
-    type HINSTANCE = *mut std::ffi::c_void;
-    type HWND = *mut std::ffi::c_void;
-
-    const WH_KEYBOARD_LL: c_int = 13;
-    const WM_KEYDOWN: WPARAM = 0x0100;
-
-    #[repr(C)]
-    struct KBDLLHOOKSTRUCT {
-        vk_code: DWORD,
-        scan_code: DWORD,
-        flags: DWORD,
-        time: DWORD,
-        dw_extra_info: usize,
-    }
-
-    #[repr(C)]
-    struct MSG {
-        hwnd: HWND,
-        message: u32,
-        w_param: WPARAM,
-        l_param: LPARAM,
-        time: DWORD,
-        pt_x: i32,
-        pt_y: i32,
-    }
-
-    extern "system" {
-        fn SetWindowsHookExW(
-            id_hook: c_int,
-            lpfn: unsafe extern "system" fn(c_int, WPARAM, LPARAM) -> LRESULT,
-            hmod: HINSTANCE,
-            dw_thread_id: DWORD,
-        ) -> HHOOK;
-        fn CallNextHookEx(
-            hhk: HHOOK,
-            n_code: c_int,
-            w_param: WPARAM,
-            l_param: LPARAM,
-        ) -> LRESULT;
-        fn GetMessageW(
-            msg: *mut MSG,
-            hwnd: HWND,
-            filter_min: u32,
-            filter_max: u32,
-        ) -> c_int;
-        fn GetModuleHandleW(module_name: *const u16) -> HINSTANCE;
-    }
-
-    unsafe extern "system" fn hook_proc(
-        n_code: c_int,
-        w_param: WPARAM,
-        l_param: LPARAM,
-    ) -> LRESULT {
-        if n_code >= 0 && w_param == WM_KEYDOWN {
-            let kb = &*(l_param as *const KBDLLHOOKSTRUCT);
-            if kb.vk_code == HOTKEY_VK.load(Ordering::Relaxed) {
-                HOTKEY_PRESSED.store(true, Ordering::Relaxed);
-            }
-        }
-        CallNextHookEx(ptr::null_mut(), n_code, w_param, l_param)
-    }
-
-    std::thread::spawn(|| unsafe {
-        let hmod = GetModuleHandleW(ptr::null());
-        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, hook_proc, hmod, 0);
-        if hook.is_null() {
-            eprintln!("[mobinogi] Failed to install keyboard hook");
-            return;
-        }
-        eprintln!("[mobinogi] Keyboard hook installed OK");
-        // Message loop required to keep the low-level hook alive
-        let mut msg: MSG = std::mem::zeroed();
-        while GetMessageW(&mut msg, ptr::null_mut(), 0, 0) > 0 {}
-    });
-}
-
-#[cfg(not(target_os = "windows"))]
-fn install_keyboard_hook() {
-    // TODO: macOS implementation
 }

@@ -35,30 +35,7 @@
     input[type="range"] { flex: 1; accent-color: #4caf50; }
     .range-value { font-size: 12px; color: #999; min-width: 32px; }
     input[type="checkbox"] { accent-color: #4caf50; width: 16px; height: 16px; }
-    .hotkey-btn {
-      width: 100%;
-      padding: 4px 16px;
-      background: #2d2d2d;
-      border: 1px solid #555;
-      border-radius: 4px;
-      color: #e0e0e0;
-      cursor: pointer;
-      font-size: 13px;
-      text-align: center;
-    }
-    .hotkey-btn:hover { border-color: #888; }
-    .hotkey-btn.listening { border-color: #4caf50; color: #4caf50; }
     hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
-    button {
-      padding: 6px 16px;
-      border: 1px solid #555;
-      border-radius: 4px;
-      background: #333;
-      color: #e0e0e0;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    button:hover { background: #444; }
     .hint { margin-top: 12px; font-size: 11px; color: #777; line-height: 1.6; }
     .section-disabled select,
     .section-disabled input,
@@ -102,21 +79,7 @@
 
   <hr>
 
-  <!-- Section 2: Manual Timer -->
-  <div id="manual-section">
-    <div class="field">
-      <label>단축키</label>
-      <button type="button" id="hotkey-btn" class="hotkey-btn">`</button>
-    </div>
-    <div class="field">
-      <label>자동 반복</label>
-      <input type="checkbox" id="auto-repeat" checked>
-    </div>
-  </div>
-
-  <hr>
-
-  <!-- Section 3: Packet Capture -->
+  <!-- Packet Capture -->
   <div class="field">
     <label style="width:auto">패킷 캡쳐 사용</label>
     <input type="checkbox" id="packet-capture">
@@ -137,8 +100,6 @@
     const { invoke } = window.__TAURI__.core;
 
     const blindSeerSelect = document.getElementById("blind-seer");
-    const hotkeyBtn = document.getElementById("hotkey-btn");
-    const autoRepeatInput = document.getElementById("auto-repeat");
     const packetCaptureInput = document.getElementById("packet-capture");
     const interfaceSelect = document.getElementById("interface");
     const opacityInput = document.getElementById("opacity");
@@ -146,33 +107,26 @@
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
     const overlayAnimationInput = document.getElementById("overlay-animation");
-    const manualSection = document.getElementById("manual-section");
     const captureSection = document.getElementById("capture-section");
 
     function saveSettings() {
       invoke("save_settings", {
         blindSeer: blindSeerSelect.value,
-        hotkeyVk: currentHotkeyVk,
-        hotkeyName: currentHotkeyName,
         overlayOpacity: parseInt(opacityInput.value, 10) / 100,
         overlayWidth: parseInt(overlayWidthInput.value, 10),
         overlayAnimation: overlayAnimationInput.checked,
-        autoRepeat: autoRepeatInput.checked,
         packetCaptureEnabled: packetCaptureInput.checked,
         networkInterface: interfaceSelect.value,
       });
     }
 
     function updateSections() {
-      const captureOn = packetCaptureInput.checked;
-      manualSection.classList.toggle("section-disabled", captureOn);
-      captureSection.classList.toggle("section-disabled", !captureOn);
+      captureSection.classList.toggle("section-disabled", !packetCaptureInput.checked);
     }
 
     blindSeerSelect.addEventListener("change", saveSettings);
     packetCaptureInput.addEventListener("change", () => { updateSections(); saveSettings(); });
     overlayAnimationInput.addEventListener("change", saveSettings);
-    autoRepeatInput.addEventListener("change", saveSettings);
     interfaceSelect.addEventListener("change", saveSettings);
     opacityInput.addEventListener("input", () => {
       opacityValue.textContent = opacityInput.value + "%";
@@ -183,59 +137,15 @@
       saveSettings();
     });
 
-    // JS event.code → Windows VK code mapping
-    const CODE_TO_VK = {
-      Backquote: 0xC0, Minus: 0xBD, Equal: 0xBB,
-      BracketLeft: 0xDB, BracketRight: 0xDD, Backslash: 0xDC,
-      Semicolon: 0xBA, Quote: 0xDE, Comma: 0xBC, Period: 0xBE, Slash: 0xBF,
-      Insert: 0x2D, Delete: 0x2E, Home: 0x24, End: 0x23,
-      PageUp: 0x21, PageDown: 0x22,
-      NumpadMultiply: 0x6A, NumpadAdd: 0x6B,
-      NumpadSubtract: 0x6D, NumpadDecimal: 0x6E, NumpadDivide: 0x6F,
-      Space: 0x20, Tab: 0x09, CapsLock: 0x14,
-      ScrollLock: 0x91, Pause: 0x13,
-    };
-    for (let i = 1; i <= 12; i++) CODE_TO_VK[`F${i}`] = 0x70 + (i - 1);
-    for (let i = 0; i < 26; i++) CODE_TO_VK[`Key${String.fromCharCode(65 + i)}`] = 65 + i;
-    for (let i = 0; i < 10; i++) CODE_TO_VK[`Digit${i}`] = 48 + i;
-    for (let i = 0; i < 10; i++) CODE_TO_VK[`Numpad${i}`] = 0x60 + i;
-
-    const CODE_TO_NAME = {
-      Backquote: "`", Minus: "-", Equal: "=",
-      BracketLeft: "[", BracketRight: "]", Backslash: "\\",
-      Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/",
-      Insert: "Insert", Delete: "Delete", Home: "Home", End: "End",
-      PageUp: "PgUp", PageDown: "PgDn",
-      NumpadMultiply: "Num*", NumpadAdd: "Num+",
-      NumpadSubtract: "Num-", NumpadDecimal: "Num.", NumpadDivide: "Num/",
-      Space: "Space", Tab: "Tab", CapsLock: "CapsLock",
-      ScrollLock: "ScrLk", Pause: "Pause",
-    };
-    for (let i = 1; i <= 12; i++) CODE_TO_NAME[`F${i}`] = `F${i}`;
-    for (let i = 0; i < 26; i++) {
-      const ch = String.fromCharCode(65 + i);
-      CODE_TO_NAME[`Key${ch}`] = ch;
-    }
-    for (let i = 0; i < 10; i++) CODE_TO_NAME[`Digit${i}`] = `${i}`;
-    for (let i = 0; i < 10; i++) CODE_TO_NAME[`Numpad${i}`] = `Num${i}`;
-
-    let currentHotkeyVk = 0xC0;
-    let currentHotkeyName = "`";
-    let listening = false;
-
     // Load settings
     invoke("get_settings").then((s) => {
       blindSeerSelect.value = s.blind_seer;
-      currentHotkeyVk = s.hotkey_vk;
-      currentHotkeyName = s.hotkey_name;
-      hotkeyBtn.textContent = currentHotkeyName;
       const pct = Math.round(s.overlay_opacity * 100);
       opacityInput.value = pct;
       opacityValue.textContent = pct + "%";
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
       overlayAnimationInput.checked = s.overlay_animation;
-      autoRepeatInput.checked = s.auto_repeat;
       packetCaptureInput.checked = s.packet_capture_enabled;
       interfaceSelect.value = s.network_interface;
       updateSections();
@@ -259,44 +169,6 @@
         }
       });
     });
-
-    hotkeyBtn.addEventListener("click", () => {
-      if (manualSection.classList.contains("section-disabled")) return;
-      listening = true;
-      hotkeyBtn.textContent = "키를 누르세요...";
-      hotkeyBtn.classList.add("listening");
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (!listening) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (["ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
-           "AltLeft", "AltRight", "MetaLeft", "MetaRight"].includes(e.code)) return;
-
-      const vk = CODE_TO_VK[e.code];
-      const name = CODE_TO_NAME[e.code];
-      if (vk !== undefined && name !== undefined) {
-        currentHotkeyVk = vk;
-        currentHotkeyName = name;
-        hotkeyBtn.textContent = name;
-      } else {
-        hotkeyBtn.textContent = e.key;
-        currentHotkeyName = e.key;
-      }
-      listening = false;
-      hotkeyBtn.classList.remove("listening");
-      saveSettings();
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (listening && e.code === "Escape") {
-        listening = false;
-        hotkeyBtn.textContent = currentHotkeyName;
-        hotkeyBtn.classList.remove("listening");
-        e.preventDefault();
-      }
-    }, true);
 
   </script>
 </body>
