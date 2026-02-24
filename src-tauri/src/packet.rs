@@ -2,16 +2,12 @@ use crate::DETECTED_BUFF_KEY;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 const START_MARKER: [u8; 9] = [0x80, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 const END_MARKER: [u8; 9] = [0x12, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 const BUFF_START_DATA_TYPE: u32 = 100054;
 const SELF_DAMAGE_DATA_TYPE: u32 = 20897;
-const SELF_DAMAGE_CAP: u64 = 2_095_071_572; // M-INBODY's damage cap
-
-/// Learned character ID via accumulated self-damage totals (same as M-INBODY).
-/// The userId with the highest total self-damage is identified as our own character.
-static SELF_CHARACTER_ID: AtomicU32 = AtomicU32::new(0);
 
 const EMBLEM_BUFF_KEYS: &[u32] = &[
     122806656,  // grand_mage (20s)
@@ -22,36 +18,77 @@ const EMBLEM_BUFF_KEYS: &[u32] = &[
     2024838942, // mountain_lord (20s)
 ];
 
+// Virtual buff keys for runes that share buffKey 122806656
+pub const GRAND_MAGE_KEY: u32 = 122806656;
+pub const MERCILESS_PREDATOR_KEY: u32 = 122806657; // virtual
+pub const MELTED_EARTH_KEY: u32 = 122806658;       // virtual
+
+/// Microseconds elapsed since a buffered buff was first detected (0 for immediate detection).
+pub static DETECTED_BUFF_ELAPSED_US: AtomicU32 = AtomicU32::new(0);
+
+// --- Block iterator ---
+
+struct DataEntry<'a> {
+    data_type: u32,
+    content: &'a [u8],
+}
+
+/// Iterates over [dataType: u32LE][length: u32LE][encodeType: u8][content: length bytes] entries.
+fn iter_data_entries(block: &[u8]) -> impl Iterator<Item = DataEntry<'_>> {
+    let mut offset = 0usize;
+    std::iter::from_fn(move || {
+        if offset + 9 > block.len() {
+            return None;
+        }
+        let data_type = u32::from_le_bytes(block[offset..offset + 4].try_into().ok()?);
+        let length =
+            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().ok()?) as usize;
+        let content_start = offset + 9;
+        if content_start + length > block.len() {
+            offset = block.len();
+            return None;
+        }
+        let entry = DataEntry {
+            data_type,
+            content: &block[content_start..content_start + length],
+        };
+        offset = content_start + length;
+        Some(entry)
+    })
+}
+
+// --- Capture state ---
+
+struct CaptureState {
+    id_frequency: HashMap<u32, u32>,
+    my_character_id: Option<u32>,
+    pending_buffs: Vec<PendingBuff>,
+}
+
+struct PendingBuff {
+    user_id: u32,
+    buff_key: u32,
+    detected_at: Instant,
+}
+
+// --- Capture entry points ---
+
 pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
     let device = if interface_name.is_empty() {
         match pcap::Device::lookup() {
             Ok(Some(d)) => d,
-            Ok(None) => {
-                eprintln!("[mobinogi] No network device found");
-                return;
-            }
-            Err(e) => {
-                eprintln!("[mobinogi] Failed to find network device: {}", e);
-                return;
-            }
+            Ok(None) => return,
+            Err(_) => return,
         }
     } else {
         match pcap::Device::list() {
             Ok(devices) => match devices.into_iter().find(|d| d.name == interface_name) {
                 Some(d) => d,
-                None => {
-                    eprintln!("[mobinogi] Interface not found: {}", interface_name);
-                    return;
-                }
+                None => return,
             },
-            Err(e) => {
-                eprintln!("[mobinogi] Failed to list devices: {}", e);
-                return;
-            }
+            Err(_) => return,
         }
     };
-
-    eprintln!("[mobinogi] Opening capture on: {}", device.name);
 
     let mut cap = match pcap::Capture::from_device(device)
         .unwrap()
@@ -61,26 +98,22 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
         .open()
     {
         Ok(c) => c,
-        Err(e) => {
-            eprintln!("[mobinogi] Failed to open capture: {}", e);
-            return;
-        }
+        Err(_) => return,
     };
 
-    if let Err(e) = cap.filter("tcp and src port 16000", true) {
-        eprintln!("[mobinogi] Failed to set filter: {}", e);
+    if cap.filter("tcp and src port 16000", true).is_err() {
         return;
     }
 
-    eprintln!("[mobinogi] Packet capture started (learning character ID from SELF_DAMAGE)");
-
     let mut buffer: Vec<u8> = Vec::new();
-    let mut self_damage_totals: HashMap<u32, u64> = HashMap::new();
-    let mut leader_total: u64 = 0;
+    let mut state = CaptureState {
+        id_frequency: HashMap::new(),
+        my_character_id: None,
+        pending_buffs: Vec::new(),
+    };
 
     loop {
         if stop.load(Ordering::Relaxed) {
-            eprintln!("[mobinogi] Capture thread stopping");
             break;
         }
         match cap.next_packet() {
@@ -90,13 +123,10 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
                     continue;
                 }
                 buffer.extend_from_slice(payload);
-                process_buffer(&mut buffer, &mut self_damage_totals, &mut leader_total);
+                process_buffer(&mut buffer, &mut state);
             }
             Err(pcap::Error::TimeoutExpired) => continue,
-            Err(e) => {
-                eprintln!("[mobinogi] Capture error: {}", e);
-                break;
-            }
+            Err(_) => break,
         }
     }
 }
@@ -118,18 +148,17 @@ pub fn find_default_device_name() -> String {
     for d in &devices {
         for addr in &d.addresses {
             if let Some(gw) = &addr.netmask {
-                // Has netmask = real interface. Check if it has a routable IPv4.
                 if let std::net::IpAddr::V4(ip) = addr.addr {
                     let octets = ip.octets();
-                    // Skip loopback (127.x), link-local (169.254.x), and zeroes
-                    if octets[0] == 127 || (octets[0] == 169 && octets[1] == 254) || octets[0] == 0 {
+                    if octets[0] == 127
+                        || (octets[0] == 169 && octets[1] == 254)
+                        || octets[0] == 0
+                    {
                         continue;
                     }
-                    // Check netmask is reasonable (not /32 or /0)
                     if let std::net::IpAddr::V4(mask) = gw {
                         let mask_bits = u32::from_be_bytes(mask.octets());
                         if mask_bits != 0 && mask_bits != 0xFFFFFFFF {
-                            eprintln!("[mobinogi] Default interface candidate: {} ({})", d.name, ip);
                             return d.name.clone();
                         }
                     }
@@ -137,7 +166,6 @@ pub fn find_default_device_name() -> String {
             }
         }
     }
-    // Fallback to pcap default
     pcap::Device::lookup()
         .ok()
         .flatten()
@@ -145,8 +173,9 @@ pub fn find_default_device_name() -> String {
         .unwrap_or_default()
 }
 
+// --- Internal ---
+
 fn extract_tcp_payload(data: &[u8]) -> &[u8] {
-    // Ethernet(14) + IP(min 20) + TCP(min 20)
     if data.len() < 54 {
         return &[];
     }
@@ -163,11 +192,7 @@ fn extract_tcp_payload(data: &[u8]) -> &[u8] {
     &data[payload_offset..]
 }
 
-fn process_buffer(
-    buffer: &mut Vec<u8>,
-    self_damage_totals: &mut HashMap<u32, u64>,
-    leader_total: &mut u64,
-) {
+fn process_buffer(buffer: &mut Vec<u8>, state: &mut CaptureState) {
     loop {
         let Some(start_pos) = find_marker(buffer, &START_MARKER) else {
             if buffer.len() > 1024 * 1024 {
@@ -189,146 +214,143 @@ fn process_buffer(
         let remove_to = data_start + end_offset + END_MARKER.len();
         buffer.drain(..remove_to);
 
-        // Learn our character ID from SELF_DAMAGE packets
-        learn_self_id(&block, self_damage_totals, leader_total);
-
-        if let Some(buff_key) = check_block_for_any_buff(&block) {
-            eprintln!("[mobinogi] Emblem awakening detected! buffKey={}", buff_key);
-            DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
-        }
+        process_block(&block, state);
     }
 }
 
-/// Learn our character ID from SELF_DAMAGE data blocks by accumulating damage totals.
-/// Same approach as M-INBODY: the userId with the highest total self-damage is our character.
-/// Content layout: [userId: u32LE @ 0] [targetId: u32LE @ 4] [damage: u32LE @ 8] ...
-fn learn_self_id(
-    block: &[u8],
-    totals: &mut HashMap<u32, u64>,
-    leader_total: &mut u64,
-) {
-    let mut offset = 0;
-    while offset + 9 <= block.len() {
-        let data_type =
-            u32::from_le_bytes(block[offset..offset + 4].try_into().unwrap_or([0; 4]));
-        let length =
-            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
-                as usize;
-        let content_start = offset + 9;
+/// Returns IDs with the highest frequency (candidates for our character).
+fn get_candidates(id_frequency: &HashMap<u32, u32>) -> Vec<u32> {
+    if id_frequency.is_empty() {
+        return vec![];
+    }
+    let max_freq = *id_frequency.values().max().unwrap();
+    id_frequency
+        .iter()
+        .filter(|(_, &count)| count == max_freq)
+        .map(|(&id, _)| id)
+        .collect()
+}
 
-        if content_start + length > block.len() {
-            break;
-        }
+fn confirm_character_id(state: &mut CaptureState, id: u32) {
+    state.my_character_id = Some(id);
+}
 
-        if data_type == SELF_DAMAGE_DATA_TYPE && length >= 12 {
-            let content = &block[content_start..content_start + length];
-            let user_id = u32::from_le_bytes(content[0..4].try_into().unwrap_or([0; 4]));
-            let damage = u32::from_le_bytes(content[8..12].try_into().unwrap_or([0; 4])) as u64;
+fn emit_buff(buff_key: u32, elapsed_us: u32) {
+    DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
+    DETECTED_BUFF_ELAPSED_US.store(elapsed_us, Ordering::Relaxed);
+}
 
-            if user_id > 0 && damage > 0 && damage <= SELF_DAMAGE_CAP {
-                let total = totals.entry(user_id).or_insert(0);
-                *total = total.saturating_add(damage);
+fn process_block(block: &[u8], state: &mut CaptureState) {
+    let mut detected_user_id = 0u32;
+    let mut detected_raw_key: Option<u32> = None;
+    let mut has_marker_100175 = false;
+    let mut has_marker_100055 = false;
+    let mut freq_updated = false;
 
-                if *total > *leader_total {
-                    *leader_total = *total;
-                    let prev = SELF_CHARACTER_ID.swap(user_id, Ordering::Relaxed);
-                    if prev != user_id {
-                        eprintln!(
-                            "[mobinogi] Character ID identified: {} (total damage: {})",
-                            user_id, *total
-                        );
+    for entry in iter_data_entries(block) {
+        match entry.data_type {
+            SELF_DAMAGE_DATA_TYPE if entry.content.len() >= 12 => {
+                if state.my_character_id.is_some() {
+                    continue;
+                }
+
+                let user_id =
+                    u32::from_le_bytes(entry.content[0..4].try_into().unwrap_or([0; 4]));
+                let target_id =
+                    u32::from_le_bytes(entry.content[8..12].try_into().unwrap_or([0; 4]));
+
+                if user_id > 0 {
+                    *state.id_frequency.entry(user_id).or_insert(0) += 1;
+                }
+                if target_id > 0 && target_id != user_id {
+                    *state.id_frequency.entry(target_id).or_insert(0) += 1;
+                }
+                freq_updated = true;
+            }
+            BUFF_START_DATA_TYPE
+                if detected_raw_key.is_none() && entry.content.len() >= 4 =>
+            {
+                let buff_user_id =
+                    u32::from_le_bytes(entry.content[0..4].try_into().unwrap_or([0; 4]));
+                for &buff_key in EMBLEM_BUFF_KEYS {
+                    if scan_for_u32(entry.content, buff_key) {
+                        detected_user_id = buff_user_id;
+                        detected_raw_key = Some(buff_key);
+                        break;
                     }
                 }
             }
+            100175 => has_marker_100175 = true,
+            100055 => has_marker_100055 = true,
+            _ => {}
         }
+    }
 
-        offset = content_start + length;
+    // Resolve shared buff key and handle emblem detection
+    if let Some(raw_key) = detected_raw_key {
+        let resolved = if raw_key == GRAND_MAGE_KEY {
+            if has_marker_100175 {
+                MERCILESS_PREDATOR_KEY
+            } else if has_marker_100055 {
+                MELTED_EARTH_KEY
+            } else {
+                GRAND_MAGE_KEY
+            }
+        } else {
+            raw_key
+        };
+
+        match state.my_character_id {
+            Some(my_id) if detected_user_id == my_id => {
+                emit_buff(resolved, 0);
+            }
+            Some(_) => {}
+            None => {
+                let candidates = get_candidates(&state.id_frequency);
+                if candidates.is_empty() {
+                    state.pending_buffs.push(PendingBuff {
+                        user_id: detected_user_id,
+                        buff_key: resolved,
+                        detected_at: Instant::now(),
+                    });
+                } else if candidates.contains(&detected_user_id) {
+                    confirm_character_id(state, detected_user_id);
+                    emit_buff(resolved, 0);
+                }
+            }
+        }
+    }
+
+    // After frequency update, try to identify our character
+    if freq_updated && state.my_character_id.is_none() {
+        let candidates = get_candidates(&state.id_frequency);
+        if candidates.len() == 1 {
+            let my_id = candidates[0];
+            confirm_character_id(state, my_id);
+            let pending = std::mem::take(&mut state.pending_buffs);
+            for pb in pending {
+                if pb.user_id == my_id {
+                    let elapsed_us = pb.detected_at.elapsed().as_micros() as u32;
+                    emit_buff(pb.buff_key, elapsed_us);
+                    break;
+                }
+            }
+        } else if candidates.len() > 1 && !state.pending_buffs.is_empty() {
+            let pending = std::mem::take(&mut state.pending_buffs);
+            for pb in pending {
+                if candidates.contains(&pb.user_id) {
+                    let elapsed_us = pb.detected_at.elapsed().as_micros() as u32;
+                    confirm_character_id(state, pb.user_id);
+                    emit_buff(pb.buff_key, elapsed_us);
+                    break;
+                }
+            }
+        }
     }
 }
 
 fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
     data.windows(marker.len()).position(|w| w == marker)
-}
-
-// Virtual buff keys for runes that share buffKey 122806656
-pub const GRAND_MAGE_KEY: u32 = 122806656;
-pub const MERCILESS_PREDATOR_KEY: u32 = 122806657; // virtual
-pub const MELTED_EARTH_KEY: u32 = 122806658;       // virtual
-
-fn check_block_for_any_buff(block: &[u8]) -> Option<u32> {
-    // Parse data blocks: [dataType: u32LE][length: u32LE][encodeType: u8][content...]
-    let mut offset = 0;
-    while offset + 9 <= block.len() {
-        let data_type =
-            u32::from_le_bytes(block[offset..offset + 4].try_into().unwrap_or([0; 4]));
-        let length =
-            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
-                as usize;
-        let content_start = offset + 9;
-
-        if content_start + length > block.len() {
-            break;
-        }
-
-        if data_type == BUFF_START_DATA_TYPE {
-            let content = &block[content_start..content_start + length];
-
-            // BUFF_START content: [userId: u32LE @ 0] ... [buffKey: u32LE @ 16] ...
-            // Only accept buffs from our own character
-            let my_id = SELF_CHARACTER_ID.load(Ordering::Relaxed);
-            if my_id != 0 && content.len() >= 4 {
-                let buff_user_id =
-                    u32::from_le_bytes(content[0..4].try_into().unwrap_or([0; 4]));
-                if buff_user_id != my_id {
-                    offset = content_start + length;
-                    continue;
-                }
-            }
-
-            for &buff_key in EMBLEM_BUFF_KEYS {
-                if scan_for_u32(content, buff_key) {
-                    if buff_key == GRAND_MAGE_KEY {
-                        return Some(resolve_shared_buff(block));
-                    }
-                    return Some(buff_key);
-                }
-            }
-        }
-
-        offset = content_start + length;
-    }
-    None
-}
-
-/// For buffKey 122806656, distinguish runes by block-level marker data types
-fn resolve_shared_buff(block: &[u8]) -> u32 {
-    if block_has_data_type(block, 100175) {
-        return MERCILESS_PREDATOR_KEY;
-    }
-    if block_has_data_type(block, 100055) {
-        return MELTED_EARTH_KEY;
-    }
-    GRAND_MAGE_KEY
-}
-
-fn block_has_data_type(block: &[u8], target: u32) -> bool {
-    let mut offset = 0;
-    while offset + 9 <= block.len() {
-        let data_type =
-            u32::from_le_bytes(block[offset..offset + 4].try_into().unwrap_or([0; 4]));
-        let length =
-            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
-                as usize;
-        let content_start = offset + 9;
-        if content_start + length > block.len() {
-            break;
-        }
-        if data_type == target {
-            return true;
-        }
-        offset = content_start + length;
-    }
-    false
 }
 
 fn scan_for_u32(data: &[u8], target: u32) -> bool {

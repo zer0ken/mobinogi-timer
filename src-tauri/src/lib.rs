@@ -134,16 +134,16 @@ impl TimerState {
         }
     }
 
-    fn start_with_emblem(&mut self, dur: f64, name: &str) {
+    fn start_with_emblem(&mut self, remaining: f64, total: f64, elapsed: f64, name: &str) {
         self.active_emblem = name.to_string();
-        self.start_timer(dur);
+        self.start_timer(remaining, total, elapsed);
     }
 
-    fn start_timer(&mut self, dur: f64) {
+    fn start_timer(&mut self, remaining: f64, total: f64, elapsed: f64) {
         let total_cd = compute_cooldown(&self.settings.blind_seer);
-        self.duration_remaining = dur;
-        self.cooldown_remaining = total_cd;
-        self.duration_total = dur;
+        self.duration_remaining = remaining;
+        self.cooldown_remaining = (total_cd - elapsed).max(0.0);
+        self.duration_total = total;
         self.cooldown_total = total_cd;
         self.phase = TimerPhase::Duration;
         self.last_tick = Instant::now();
@@ -299,11 +299,13 @@ pub fn run() {
                 // Check for auto-detected buff from packet capture
                 let detected = DETECTED_BUFF_KEY.swap(0, Ordering::Relaxed);
                 if detected != 0 {
+                    let elapsed_us = packet::DETECTED_BUFF_ELAPSED_US.swap(0, Ordering::Relaxed);
+                    let elapsed_secs = elapsed_us as f64 / 1_000_000.0;
                     if let Some(info) = find_emblem_by_buff_key(detected) {
+                        let adjusted_dur = (info.duration - elapsed_secs).max(0.0);
                         let mut timer = tick_state.lock().unwrap();
-                        if timer.phase == TimerPhase::Idle {
-                            timer.start_with_emblem(info.duration, info.name);
-                            eprintln!("[mobinogi] Timer auto-started ({}, dur={}s)", info.name, info.duration);
+                        if timer.phase == TimerPhase::Idle && adjusted_dur > 0.0 {
+                            timer.start_with_emblem(adjusted_dur, info.duration, elapsed_secs, info.name);
                         }
                     }
                 }
