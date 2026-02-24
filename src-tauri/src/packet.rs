@@ -1,5 +1,4 @@
 use crate::DETECTED_BUFF_KEY;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -57,15 +56,36 @@ fn iter_data_entries(block: &[u8]) -> impl Iterator<Item = DataEntry<'_>> {
     })
 }
 
-// --- Capture state ---
+// --- Character identification & emblem detection ---
+//
+// SELF_DAMAGE 패킷은 내 캐릭터가 관련된 전투에서만 수신된다.
+// 내가 공격하면 userId가 나, 내가 맞으면 targetId가 나.
+// 따라서 가장 최근 SELF_DAMAGE의 userId·targetId 둘이 곧 내 캐릭터 후보다.
+//
+// 엠블럼 각성(BUFF_START) 패킷은 주변 모든 플레이어의 것이 수신되므로,
+// 그 userId가 후보에 속할 때만 내 각성으로 판단하고 타이머를 발동한다.
+//
+// ID를 확정하지 않는 이유:
+// - 캐릭터 ID는 맵 이동 시 변경될 수 있다.
+// - 항상 최신 SELF_DAMAGE의 두 ID만 후보로 유지하면,
+//   맵 이동 후에도 새 전투 한 번이면 즉시 후보가 갱신된다.
+//
+// 버퍼링 전략:
+// - 엠블럼 패킷은 후보 존재 여부와 무관하게 무조건 큐에 저장한다.
+//   엠블럼이 SELF_DAMAGE보다 간발의 차이로 먼저 도착할 수 있기 때문이다.
+// - SELF_DAMAGE가 올 때마다 후보를 갱신한 뒤 큐를 재검사한다.
+// - 지속시간(최대 35초)이 지난 항목은 만료 제거한다.
+// - 매칭된 항목보다 이전에 들어온 것은 전부 제거한다.
+//   (이전 것들은 다른 유저의 각성이거나 이미 의미 없는 데이터)
+
+const MAX_BUFF_AGE_SECS: f64 = 35.0;
 
 struct CaptureState {
-    id_frequency: HashMap<u32, u32>,
-    my_character_id: Option<u32>,
-    pending_buffs: Vec<PendingBuff>,
+    candidates: [u32; 2], // [userId, targetId] from latest SELF_DAMAGE
+    buff_queue: Vec<BufferedBuff>,
 }
 
-struct PendingBuff {
+struct BufferedBuff {
     user_id: u32,
     buff_key: u32,
     detected_at: Instant,
@@ -107,9 +127,8 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
 
     let mut buffer: Vec<u8> = Vec::new();
     let mut state = CaptureState {
-        id_frequency: HashMap::new(),
-        my_character_id: None,
-        pending_buffs: Vec::new(),
+        candidates: [0; 2],
+        buff_queue: Vec::new(),
     };
 
     loop {
@@ -218,23 +237,6 @@ fn process_buffer(buffer: &mut Vec<u8>, state: &mut CaptureState) {
     }
 }
 
-/// Returns IDs with the highest frequency (candidates for our character).
-fn get_candidates(id_frequency: &HashMap<u32, u32>) -> Vec<u32> {
-    if id_frequency.is_empty() {
-        return vec![];
-    }
-    let max_freq = *id_frequency.values().max().unwrap();
-    id_frequency
-        .iter()
-        .filter(|(_, &count)| count == max_freq)
-        .map(|(&id, _)| id)
-        .collect()
-}
-
-fn confirm_character_id(state: &mut CaptureState, id: u32) {
-    state.my_character_id = Some(id);
-}
-
 fn emit_buff(buff_key: u32, elapsed_us: u32) {
     DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
     DETECTED_BUFF_ELAPSED_US.store(elapsed_us, Ordering::Relaxed);
@@ -245,27 +247,18 @@ fn process_block(block: &[u8], state: &mut CaptureState) {
     let mut detected_raw_key: Option<u32> = None;
     let mut has_marker_100175 = false;
     let mut has_marker_100055 = false;
-    let mut freq_updated = false;
+    let mut candidates_updated = false;
 
     for entry in iter_data_entries(block) {
         match entry.data_type {
             SELF_DAMAGE_DATA_TYPE if entry.content.len() >= 12 => {
-                if state.my_character_id.is_some() {
-                    continue;
-                }
-
                 let user_id =
                     u32::from_le_bytes(entry.content[0..4].try_into().unwrap_or([0; 4]));
                 let target_id =
                     u32::from_le_bytes(entry.content[8..12].try_into().unwrap_or([0; 4]));
 
-                if user_id > 0 {
-                    *state.id_frequency.entry(user_id).or_insert(0) += 1;
-                }
-                if target_id > 0 && target_id != user_id {
-                    *state.id_frequency.entry(target_id).or_insert(0) += 1;
-                }
-                freq_updated = true;
+                state.candidates = [user_id, target_id];
+                candidates_updated = true;
             }
             BUFF_START_DATA_TYPE
                 if detected_raw_key.is_none() && entry.content.len() >= 4 =>
@@ -286,7 +279,7 @@ fn process_block(block: &[u8], state: &mut CaptureState) {
         }
     }
 
-    // Resolve shared buff key and handle emblem detection
+    // Always buffer emblem detections
     if let Some(raw_key) = detected_raw_key {
         let resolved = if raw_key == GRAND_MAGE_KEY {
             if has_marker_100175 {
@@ -300,51 +293,22 @@ fn process_block(block: &[u8], state: &mut CaptureState) {
             raw_key
         };
 
-        match state.my_character_id {
-            Some(my_id) if detected_user_id == my_id => {
-                emit_buff(resolved, 0);
-            }
-            Some(_) => {}
-            None => {
-                let candidates = get_candidates(&state.id_frequency);
-                if candidates.is_empty() {
-                    state.pending_buffs.push(PendingBuff {
-                        user_id: detected_user_id,
-                        buff_key: resolved,
-                        detected_at: Instant::now(),
-                    });
-                } else if candidates.contains(&detected_user_id) {
-                    confirm_character_id(state, detected_user_id);
-                    emit_buff(resolved, 0);
-                }
-            }
-        }
+        state.buff_queue.push(BufferedBuff {
+            user_id: detected_user_id,
+            buff_key: resolved,
+            detected_at: Instant::now(),
+        });
     }
 
-    // After frequency update, try to identify our character
-    if freq_updated && state.my_character_id.is_none() {
-        let candidates = get_candidates(&state.id_frequency);
-        if candidates.len() == 1 {
-            let my_id = candidates[0];
-            confirm_character_id(state, my_id);
-            let pending = std::mem::take(&mut state.pending_buffs);
-            for pb in pending {
-                if pb.user_id == my_id {
-                    let elapsed_us = pb.detected_at.elapsed().as_micros() as u32;
-                    emit_buff(pb.buff_key, elapsed_us);
-                    break;
-                }
-            }
-        } else if candidates.len() > 1 && !state.pending_buffs.is_empty() {
-            let pending = std::mem::take(&mut state.pending_buffs);
-            for pb in pending {
-                if candidates.contains(&pb.user_id) {
-                    let elapsed_us = pb.detected_at.elapsed().as_micros() as u32;
-                    confirm_character_id(state, pb.user_id);
-                    emit_buff(pb.buff_key, elapsed_us);
-                    break;
-                }
-            }
+    // After each SELF_DAMAGE, check buffer against candidates
+    if candidates_updated {
+        let now = Instant::now();
+        state.buff_queue.retain(|b| now.duration_since(b.detected_at).as_secs_f64() < MAX_BUFF_AGE_SECS);
+
+        if let Some(idx) = state.buff_queue.iter().position(|b| state.candidates.contains(&b.user_id)) {
+            let elapsed_us = state.buff_queue[idx].detected_at.elapsed().as_micros() as u32;
+            emit_buff(state.buff_queue[idx].buff_key, elapsed_us);
+            state.buff_queue.drain(..=idx);
         }
     }
 }
