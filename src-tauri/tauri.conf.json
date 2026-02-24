@@ -1,6 +1,6 @@
 {
   "productName": "Mobinogi Timer",
-  "version": "2026.2.25.1",
+  "version": "2026.2.2501",
   "identifier": "com.mobinogi.timer",
   "build": {
     "frontendDist": "../src"
