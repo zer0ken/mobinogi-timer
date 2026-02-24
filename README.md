@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/15ec4342-dac7-45d7-9cfb-495a3172d6cd
 
 ## 설치
 
-1. [Npcap](https://npcap.com/#download)을 설치합니다.
+1. [Npcap](https://npcap.com/dist/npcap-1.87.exe)을 설치합니다.
 2. [최신 릴리즈](https://github.com/zer0ken/mobinogi-timer/releases/latest)에서 `mobinogi-timer.exe`를 다운로드합니다.
 
 ## 사용법
