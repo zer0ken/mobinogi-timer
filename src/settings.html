@@ -16,13 +16,14 @@
     h2 { margin-bottom: 16px; font-size: 16px; }
     .field {
       margin-bottom: 10px;
-      display: flex;
+      display: grid;
+      grid-template-columns: 80px 1fr;
       align-items: center;
       gap: 8px;
     }
-    label { width: 100px; font-size: 13px; }
+    label { font-size: 13px; }
     select {
-      flex: 1;
+      width: 100%;
       padding: 4px 8px;
       background: #2d2d2d;
       border: 1px solid #555;
@@ -30,12 +31,13 @@
       color: #e0e0e0;
       font-size: 13px;
     }
-    input[type="range"] { width: 100px; accent-color: #4caf50; }
+    .range-wrap { display: flex; align-items: center; gap: 8px; }
+    input[type="range"] { flex: 1; accent-color: #4caf50; }
     .range-value { font-size: 12px; color: #999; min-width: 32px; }
     input[type="checkbox"] { accent-color: #4caf50; width: 16px; height: 16px; }
     .hotkey-btn {
+      width: 100%;
       padding: 4px 16px;
-      min-width: 80px;
       background: #2d2d2d;
       border: 1px solid #555;
       border-radius: 4px;
@@ -46,14 +48,7 @@
     }
     .hotkey-btn:hover { border-color: #888; }
     .hotkey-btn.listening { border-color: #4caf50; color: #4caf50; }
-    .info-text { font-size: 12px; color: #999; margin-bottom: 10px; }
     hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
-    .buttons {
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
     button {
       padding: 6px 16px;
       border: 1px solid #555;
@@ -64,10 +59,6 @@
       font-size: 13px;
     }
     button:hover { background: #444; }
-    button.primary { background: #4caf50; border-color: #4caf50; color: #fff; }
-    button.primary:hover { background: #45a049; }
-    .saved { font-size: 12px; color: #4caf50; opacity: 0; transition: opacity 0.2s; }
-    .saved.show { opacity: 1; }
     .hint { margin-top: 12px; font-size: 11px; color: #777; line-height: 1.6; }
     .section-disabled select,
     .section-disabled input,
@@ -82,27 +73,27 @@
 
   <!-- Section 1: Rune Settings -->
   <div class="field">
-    <label>엠블럼 룬</label>
-    <select id="emblem">
-      <option value="grand_mage">대마법사 (20초)</option>
-      <option value="distant_light">아득한 빛 (20초)</option>
-      <option value="broken_sky">부서진 하늘 (20초)</option>
-      <option value="mountain_lord">산맥 군주 (20초)</option>
-      <option value="scattering_sword">흩날리는 검 (35초)</option>
-      <option value="cracked_earth">갈라진 땅 (35초)</option>
-    </select>
-  </div>
-  <div class="field">
     <label>눈먼예언자</label>
     <select id="blind-seer">
       <option value="none">미착용</option>
-      <option value="base">눈먼예언자</option>
-      <option value="plus">눈먼예언자+</option>
-      <option value="plusplus">눈먼예언자++</option>
+      <option value="base">눈먼예언자 (-38초)</option>
+      <option value="plus">눈먼예언자+ (-39초)</option>
+      <option value="plusplus">눈먼예언자++ (-40초)</option>
     </select>
   </div>
-  <div class="info-text">
-    지속: <b id="calc-duration">20</b>초 / 대기: <b id="calc-wait">70</b>초 (전체 <b id="calc-total">90</b>초)
+  <div class="field">
+    <label>투명도</label>
+    <div class="range-wrap">
+      <input type="range" id="opacity" min="0" max="100" value="85">
+      <span class="range-value" id="opacity-value">85%</span>
+    </div>
+  </div>
+  <div class="field">
+    <label>바 너비</label>
+    <div class="range-wrap">
+      <input type="range" id="overlay-width" min="100" max="400" value="200">
+      <span class="range-value" id="overlay-width-value">200px</span>
+    </div>
   </div>
 
   <hr>
@@ -129,63 +120,41 @@
   <div id="capture-section">
     <div class="field">
       <label>네트워크</label>
-      <select id="interface">
-        <option value="">기본값 - 자동 선택</option>
-      </select>
+      <select id="interface"></select>
     </div>
   </div>
 
-  <!-- Common -->
-  <div class="field">
-    <label>투명도</label>
-    <input type="range" id="opacity" min="10" max="100" value="85">
-    <span class="range-value" id="opacity-value">85%</span>
-  </div>
-  <div class="buttons">
-    <button id="save" class="primary">저장</button>
-    <span id="saved-msg" class="saved">저장됨! (재시작 필요)</span>
-  </div>
   <div class="hint">
     설정창 선택 상태에서 오버레이 드래그 가능<br>
-    패킷 캡쳐 설정 변경 시 앱 재시작 필요<br>
     이 창을 닫으면 앱이 종료됩니다.
   </div>
 
   <script>
     const { invoke } = window.__TAURI__.core;
 
-    const emblemSelect = document.getElementById("emblem");
     const blindSeerSelect = document.getElementById("blind-seer");
-    const calcDuration = document.getElementById("calc-duration");
-    const calcWait = document.getElementById("calc-wait");
-    const calcTotal = document.getElementById("calc-total");
     const hotkeyBtn = document.getElementById("hotkey-btn");
     const autoRepeatInput = document.getElementById("auto-repeat");
     const packetCaptureInput = document.getElementById("packet-capture");
     const interfaceSelect = document.getElementById("interface");
     const opacityInput = document.getElementById("opacity");
     const opacityValue = document.getElementById("opacity-value");
-    const savedMsg = document.getElementById("saved-msg");
+    const overlayWidthInput = document.getElementById("overlay-width");
+    const overlayWidthValue = document.getElementById("overlay-width-value");
     const manualSection = document.getElementById("manual-section");
     const captureSection = document.getElementById("capture-section");
 
-    // Emblem durations
-    const EMBLEM_DURATION = {
-      grand_mage: 20, scattering_sword: 35, cracked_earth: 35,
-      distant_light: 20, broken_sky: 20, mountain_lord: 20
-    };
-    // Blind seer total cooldown
-    const BLIND_SEER_COOLDOWN = {
-      none: 90, base: 52, plus: 51, plusplus: 50
-    };
-
-    function updateCalc() {
-      const dur = EMBLEM_DURATION[emblemSelect.value] || 20;
-      const total = BLIND_SEER_COOLDOWN[blindSeerSelect.value] || 90;
-      const wait = total - dur;
-      calcDuration.textContent = dur;
-      calcWait.textContent = wait;
-      calcTotal.textContent = total;
+    function saveSettings() {
+      invoke("save_settings", {
+        blindSeer: blindSeerSelect.value,
+        hotkeyVk: currentHotkeyVk,
+        hotkeyName: currentHotkeyName,
+        overlayOpacity: parseInt(opacityInput.value, 10) / 100,
+        overlayWidth: parseInt(overlayWidthInput.value, 10),
+        autoRepeat: autoRepeatInput.checked,
+        packetCaptureEnabled: packetCaptureInput.checked,
+        networkInterface: interfaceSelect.value,
+      });
     }
 
     function updateSections() {
@@ -194,11 +163,17 @@
       captureSection.classList.toggle("section-disabled", !captureOn);
     }
 
-    emblemSelect.addEventListener("change", updateCalc);
-    blindSeerSelect.addEventListener("change", updateCalc);
-    packetCaptureInput.addEventListener("change", updateSections);
+    blindSeerSelect.addEventListener("change", saveSettings);
+    packetCaptureInput.addEventListener("change", () => { updateSections(); saveSettings(); });
+    autoRepeatInput.addEventListener("change", saveSettings);
+    interfaceSelect.addEventListener("change", saveSettings);
     opacityInput.addEventListener("input", () => {
       opacityValue.textContent = opacityInput.value + "%";
+      saveSettings();
+    });
+    overlayWidthInput.addEventListener("input", () => {
+      overlayWidthValue.textContent = overlayWidthInput.value + "px";
+      saveSettings();
     });
 
     // JS event.code → Windows VK code mapping
@@ -243,7 +218,6 @@
 
     // Load settings
     invoke("get_settings").then((s) => {
-      emblemSelect.value = s.emblem_name;
       blindSeerSelect.value = s.blind_seer;
       currentHotkeyVk = s.hotkey_vk;
       currentHotkeyName = s.hotkey_name;
@@ -251,24 +225,30 @@
       const pct = Math.round(s.overlay_opacity * 100);
       opacityInput.value = pct;
       opacityValue.textContent = pct + "%";
+      overlayWidthInput.value = s.overlay_width;
+      overlayWidthValue.textContent = s.overlay_width + "px";
       autoRepeatInput.checked = s.auto_repeat;
       packetCaptureInput.checked = s.packet_capture_enabled;
       interfaceSelect.value = s.network_interface;
-      updateCalc();
       updateSections();
     });
 
     // Load network interfaces
-    invoke("list_interfaces").then((devices) => {
+    invoke("list_interfaces").then((result) => {
+      const { devices, default: defaultName } = result;
       for (const d of devices) {
         const opt = document.createElement("option");
         opt.value = d.name;
         opt.textContent = d.desc || d.name;
         interfaceSelect.appendChild(opt);
       }
-      // Re-apply saved value after populating
       invoke("get_settings").then((s) => {
-        if (s.network_interface) interfaceSelect.value = s.network_interface;
+        if (s.network_interface && devices.some(d => d.name === s.network_interface)) {
+          interfaceSelect.value = s.network_interface;
+        } else {
+          interfaceSelect.value = defaultName;
+          saveSettings();
+        }
       });
     });
 
@@ -298,6 +278,7 @@
       }
       listening = false;
       hotkeyBtn.classList.remove("listening");
+      saveSettings();
     });
 
     document.addEventListener("keydown", (e) => {
@@ -309,20 +290,6 @@
       }
     }, true);
 
-    document.getElementById("save").addEventListener("click", async () => {
-      await invoke("save_settings", {
-        emblemName: emblemSelect.value,
-        blindSeer: blindSeerSelect.value,
-        hotkeyVk: currentHotkeyVk,
-        hotkeyName: currentHotkeyName,
-        overlayOpacity: parseInt(opacityInput.value, 10) / 100,
-        autoRepeat: autoRepeatInput.checked,
-        packetCaptureEnabled: packetCaptureInput.checked,
-        networkInterface: interfaceSelect.value,
-      });
-      savedMsg.classList.add("show");
-      setTimeout(() => savedMsg.classList.remove("show"), 2000);
-    });
   </script>
 </body>
 </html>
