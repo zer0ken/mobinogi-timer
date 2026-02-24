@@ -1,10 +1,17 @@
 use crate::DETECTED_BUFF_KEY;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 const START_MARKER: [u8; 9] = [0x80, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 const END_MARKER: [u8; 9] = [0x12, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 const BUFF_START_DATA_TYPE: u32 = 100054;
+const SELF_DAMAGE_DATA_TYPE: u32 = 20897;
+const SELF_DAMAGE_CAP: u64 = 2_095_071_572; // M-INBODY's damage cap
+
+/// Learned character ID via accumulated self-damage totals (same as M-INBODY).
+/// The userId with the highest total self-damage is identified as our own character.
+static SELF_CHARACTER_ID: AtomicU32 = AtomicU32::new(0);
 
 const EMBLEM_BUFF_KEYS: &[u32] = &[
     122806656,  // grand_mage (20s)
@@ -65,9 +72,11 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
         return;
     }
 
-    eprintln!("[mobinogi] Packet capture started (monitoring all emblems)");
+    eprintln!("[mobinogi] Packet capture started (learning character ID from SELF_DAMAGE)");
 
     let mut buffer: Vec<u8> = Vec::new();
+    let mut self_damage_totals: HashMap<u32, u64> = HashMap::new();
+    let mut leader_total: u64 = 0;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -81,7 +90,7 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
                     continue;
                 }
                 buffer.extend_from_slice(payload);
-                process_buffer(&mut buffer);
+                process_buffer(&mut buffer, &mut self_damage_totals, &mut leader_total);
             }
             Err(pcap::Error::TimeoutExpired) => continue,
             Err(e) => {
@@ -154,7 +163,11 @@ fn extract_tcp_payload(data: &[u8]) -> &[u8] {
     &data[payload_offset..]
 }
 
-fn process_buffer(buffer: &mut Vec<u8>) {
+fn process_buffer(
+    buffer: &mut Vec<u8>,
+    self_damage_totals: &mut HashMap<u32, u64>,
+    leader_total: &mut u64,
+) {
     loop {
         let Some(start_pos) = find_marker(buffer, &START_MARKER) else {
             if buffer.len() > 1024 * 1024 {
@@ -176,10 +189,60 @@ fn process_buffer(buffer: &mut Vec<u8>) {
         let remove_to = data_start + end_offset + END_MARKER.len();
         buffer.drain(..remove_to);
 
+        // Learn our character ID from SELF_DAMAGE packets
+        learn_self_id(&block, self_damage_totals, leader_total);
+
         if let Some(buff_key) = check_block_for_any_buff(&block) {
             eprintln!("[mobinogi] Emblem awakening detected! buffKey={}", buff_key);
             DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
         }
+    }
+}
+
+/// Learn our character ID from SELF_DAMAGE data blocks by accumulating damage totals.
+/// Same approach as M-INBODY: the userId with the highest total self-damage is our character.
+/// Content layout: [userId: u32LE @ 0] [targetId: u32LE @ 4] [damage: u32LE @ 8] ...
+fn learn_self_id(
+    block: &[u8],
+    totals: &mut HashMap<u32, u64>,
+    leader_total: &mut u64,
+) {
+    let mut offset = 0;
+    while offset + 9 <= block.len() {
+        let data_type =
+            u32::from_le_bytes(block[offset..offset + 4].try_into().unwrap_or([0; 4]));
+        let length =
+            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
+                as usize;
+        let content_start = offset + 9;
+
+        if content_start + length > block.len() {
+            break;
+        }
+
+        if data_type == SELF_DAMAGE_DATA_TYPE && length >= 12 {
+            let content = &block[content_start..content_start + length];
+            let user_id = u32::from_le_bytes(content[0..4].try_into().unwrap_or([0; 4]));
+            let damage = u32::from_le_bytes(content[8..12].try_into().unwrap_or([0; 4])) as u64;
+
+            if user_id > 0 && damage > 0 && damage <= SELF_DAMAGE_CAP {
+                let total = totals.entry(user_id).or_insert(0);
+                *total = total.saturating_add(damage);
+
+                if *total > *leader_total {
+                    *leader_total = *total;
+                    let prev = SELF_CHARACTER_ID.swap(user_id, Ordering::Relaxed);
+                    if prev != user_id {
+                        eprintln!(
+                            "[mobinogi] Character ID identified: {} (total damage: {})",
+                            user_id, *total
+                        );
+                    }
+                }
+            }
+        }
+
+        offset = content_start + length;
     }
 }
 
@@ -209,6 +272,19 @@ fn check_block_for_any_buff(block: &[u8]) -> Option<u32> {
 
         if data_type == BUFF_START_DATA_TYPE {
             let content = &block[content_start..content_start + length];
+
+            // BUFF_START content: [userId: u32LE @ 0] ... [buffKey: u32LE @ 16] ...
+            // Only accept buffs from our own character
+            let my_id = SELF_CHARACTER_ID.load(Ordering::Relaxed);
+            if my_id != 0 && content.len() >= 4 {
+                let buff_user_id =
+                    u32::from_le_bytes(content[0..4].try_into().unwrap_or([0; 4]));
+                if buff_user_id != my_id {
+                    offset = content_start + length;
+                    continue;
+                }
+            }
+
             for &buff_key in EMBLEM_BUFF_KEYS {
                 if scan_for_u32(content, buff_key) {
                     if buff_key == GRAND_MAGE_KEY {
