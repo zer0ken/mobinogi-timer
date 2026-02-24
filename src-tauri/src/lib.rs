@@ -253,6 +253,33 @@ fn check_npcap() -> bool {
 }
 
 #[tauri::command]
+fn get_version(app: AppHandle) -> String {
+    app.config().version.clone().unwrap_or_default()
+}
+
+#[tauri::command]
+fn check_update() -> serde_json::Value {
+    let result = (|| -> Result<serde_json::Value, String> {
+        let body: String = ureq::get("https://api.github.com/repos/zer0ken/mobinogi-timer/releases/latest")
+            .header("User-Agent", "mobinogi-timer")
+            .header("Accept", "application/vnd.github+json")
+            .call()
+            .map_err(|e| e.to_string())?
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
+        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let tag = json["tag_name"].as_str().unwrap_or("").to_string();
+        let url = json["html_url"].as_str().unwrap_or("").to_string();
+        Ok(serde_json::json!({ "tag": tag, "url": url }))
+    })();
+    match result {
+        Ok(v) => v,
+        Err(_) => serde_json::json!({ "tag": "", "url": "" }),
+    }
+}
+
+#[tauri::command]
 fn open_url(url: String) {
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn(); }
@@ -290,7 +317,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(timer_state.clone())
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, check_npcap, open_url])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, check_npcap, open_url, get_version, check_update])
         .setup(move |app| {
             let handle = app.handle().clone();
 

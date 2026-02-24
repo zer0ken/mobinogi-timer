@@ -61,7 +61,7 @@
   </style>
 </head>
 <body>
-  <h2>모비노기 각성 타이머</h2>
+  <h2>모비노기 각성 타이머 <span id="version" style="font-size:12px;font-weight:normal;color:#666;"></span></h2>
 
   <div id="npcap-banner" class="npcap-banner">
     <span>패킷 캡쳐를 위해 <a href="#" onclick="invoke('open_url',{url:'https://npcap.com/dist/npcap-1.87.exe'});return false;">Npcap</a>을 설치해야 합니다.</span>
@@ -107,6 +107,7 @@
     문제 제보나 기능 제안은 <a href="#" onclick="invoke('open_url',{url:'https://github.com/zer0ken/mobinogi-timer/issues'});return false;" style="color:#888;">여기</a>에 남겨주세요.<br>
     <a href="#" onclick="document.getElementById('npcap-banner').style.display='flex';return false;" style="color:#888;">Npcap 설치</a>
   </div>
+  <div id="update-notice" class="hint" style="display:none;"></div>
 
   <script>
     const { invoke } = window.__TAURI__.core;
@@ -164,6 +165,19 @@
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
       interfaceSelect.value = s.network_interface;
+    });
+
+    // Version display & update check
+    invoke("get_version").then((version) => {
+      document.getElementById("version").textContent = "v" + version;
+      invoke("check_update").then((info) => {
+        const tag = info.tag ? info.tag.replace(/^v/, "") : "";
+        if (tag && tag !== version) {
+          const notice = document.getElementById("update-notice");
+          notice.innerHTML = '업데이트가 있습니다: <a href="#" style="color:#888;" onclick="invoke(\'open_url\',{url:\'' + info.url + '\'});return false;">v' + tag + '</a>';
+          notice.style.display = "block";
+        }
+      });
     });
 
     // Load network interfaces
