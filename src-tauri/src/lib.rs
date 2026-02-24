@@ -53,8 +53,6 @@ struct Settings {
     overlay_opacity: f64,
     #[serde(default = "default_overlay_width")]
     overlay_width: u32,
-    #[serde(default = "default_overlay_animation")]
-    overlay_animation: bool,
     #[serde(default)]
     packet_capture_enabled: bool,
     #[serde(default)]
@@ -66,7 +64,7 @@ fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.85 }
 fn default_overlay_width() -> u32 { 200 }
-fn default_overlay_animation() -> bool { true }
+
 
 impl Default for Settings {
     fn default() -> Self {
@@ -76,7 +74,6 @@ impl Default for Settings {
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
-            overlay_animation: default_overlay_animation(),
             packet_capture_enabled: false,
             network_interface: String::new(),
         }
@@ -209,7 +206,6 @@ fn save_settings(
     blind_seer: String,
     overlay_opacity: f64,
     overlay_width: u32,
-    overlay_animation: bool,
     packet_capture_enabled: bool,
     network_interface: String,
 ) {
@@ -220,7 +216,6 @@ fn save_settings(
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         overlay_width,
-        overlay_animation,
         packet_capture_enabled,
         network_interface,
     };

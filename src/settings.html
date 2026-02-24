@@ -72,10 +72,6 @@
       <span class="range-value" id="overlay-width-value">200px</span>
     </div>
   </div>
-  <div class="field">
-    <label>애니메이션</label>
-    <input type="checkbox" id="overlay-animation" checked>
-  </div>
 
   <hr>
 
@@ -106,7 +102,6 @@
     const opacityValue = document.getElementById("opacity-value");
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
-    const overlayAnimationInput = document.getElementById("overlay-animation");
     const captureSection = document.getElementById("capture-section");
 
     function saveSettings() {
@@ -114,7 +109,6 @@
         blindSeer: blindSeerSelect.value,
         overlayOpacity: parseInt(opacityInput.value, 10) / 100,
         overlayWidth: parseInt(overlayWidthInput.value, 10),
-        overlayAnimation: overlayAnimationInput.checked,
         packetCaptureEnabled: packetCaptureInput.checked,
         networkInterface: interfaceSelect.value,
       });
@@ -126,7 +120,6 @@
 
     blindSeerSelect.addEventListener("change", saveSettings);
     packetCaptureInput.addEventListener("change", () => { updateSections(); saveSettings(); });
-    overlayAnimationInput.addEventListener("change", saveSettings);
     interfaceSelect.addEventListener("change", saveSettings);
     opacityInput.addEventListener("input", () => {
       opacityValue.textContent = opacityInput.value + "%";
@@ -145,7 +138,6 @@
       opacityValue.textContent = pct + "%";
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
-      overlayAnimationInput.checked = s.overlay_animation;
       packetCaptureInput.checked = s.packet_capture_enabled;
       interfaceSelect.value = s.network_interface;
       updateSections();

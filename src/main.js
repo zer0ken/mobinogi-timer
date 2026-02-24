@@ -11,9 +11,6 @@ const barTrack = document.getElementById("bar-track");
 const appWindow = getCurrentWindow();
 const PAD = 8;
 
-const ANIMATE = "left 200ms ease, width 200ms ease";
-let animationEnabled = true;
-
 function updateBg() {
   const labelRect = label.getBoundingClientRect();
   const barRect = barTrack.getBoundingClientRect();
@@ -26,7 +23,6 @@ function updateBg() {
     right = timeRect.right + PAD;
   }
 
-  bg.style.transition = animationEnabled ? ANIMATE : "none";
   bg.style.left = left + "px";
   bg.style.width = (right - left) + "px";
 }
@@ -34,7 +30,6 @@ function updateBg() {
 function applySettings(settings) {
   bg.style.background = `rgba(30, 30, 30, ${settings.overlay_opacity})`;
   barTrack.style.width = settings.overlay_width + "px";
-  animationEnabled = settings.overlay_animation;
   requestAnimationFrame(updateBg);
 }
 
@@ -42,10 +37,7 @@ invoke("get_settings").then((settings) => {
   bg.style.transition = "none";
   applySettings(settings);
   requestAnimationFrame(() => {
-    updateBg();
-    requestAnimationFrame(() => {
-      bg.style.transition = "";
-    });
+    bg.style.transition = "";
   });
 });
 
