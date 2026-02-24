@@ -14,33 +14,35 @@ html, body {
 }
 
 #timer-bar {
-  width: 100%;
-  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
   background: rgba(30, 30, 30, 0.85); /* overridden by JS */
   overflow: hidden;
   cursor: grab;
-  display: flex;
-  align-items: center;
-  padding: 8px;
+  padding: 0 8px;
   gap: 6px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 #label {
   font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
   flex-shrink: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 1);
 }
 
 #bar-track {
-  flex: 1;
+  flex-shrink: 0;
   height: 6px;
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
 #progress {
@@ -57,4 +59,18 @@ html, body {
 
 #progress.idle {
   background: #2196f3;
+}
+
+#time {
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 1);
+}
+
+#time:empty {
+  display: none;
 }
