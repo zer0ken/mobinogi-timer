@@ -57,6 +57,8 @@ struct Settings {
     overlay_opacity: f64,
     #[serde(default = "default_overlay_width")]
     overlay_width: u32,
+    #[serde(default = "default_overlay_animation")]
+    overlay_animation: bool,
     #[serde(default = "default_auto_repeat")]
     auto_repeat: bool,
     #[serde(default)]
@@ -72,6 +74,7 @@ fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.85 }
 fn default_overlay_width() -> u32 { 200 }
+fn default_overlay_animation() -> bool { true }
 fn default_auto_repeat() -> bool { true }
 
 impl Default for Settings {
@@ -84,6 +87,7 @@ impl Default for Settings {
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
+            overlay_animation: default_overlay_animation(),
             auto_repeat: default_auto_repeat(),
             packet_capture_enabled: false,
             network_interface: String::new(),
@@ -160,11 +164,10 @@ impl TimerState {
 
     fn start_timer(&mut self, dur: f64) {
         let total_cd = compute_cooldown(&self.settings.blind_seer);
-        let wait = total_cd - dur;
         self.duration_remaining = dur;
-        self.cooldown_remaining = wait;
+        self.cooldown_remaining = total_cd;
         self.duration_total = dur;
-        self.cooldown_total = wait;
+        self.cooldown_total = total_cd;
         self.phase = TimerPhase::Duration;
         self.last_tick = Instant::now();
     }
@@ -183,6 +186,7 @@ impl TimerState {
             TimerPhase::Idle => unreachable!(),
             TimerPhase::Duration => {
                 self.duration_remaining -= dt;
+                self.cooldown_remaining -= dt;
                 if self.duration_remaining <= 0.0 {
                     self.cooldown_remaining += self.duration_remaining;
                     self.duration_remaining = 0.0;
@@ -229,6 +233,7 @@ fn save_settings(
     hotkey_name: String,
     overlay_opacity: f64,
     overlay_width: u32,
+    overlay_animation: bool,
     auto_repeat: bool,
     packet_capture_enabled: bool,
     network_interface: String,
@@ -242,6 +247,7 @@ fn save_settings(
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         overlay_width,
+        overlay_animation,
         auto_repeat,
         packet_capture_enabled,
         network_interface,

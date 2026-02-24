@@ -28,17 +28,18 @@ body {
   border-radius: 6px;
   top: 50%;
   transform: translateY(-50%);
-  transition: left 400ms ease, width 400ms ease; /* default shrink; expand set by JS */
+  transition: left 200ms ease, width 200ms ease;
   cursor: grab;
 }
 
 #label {
   font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 1);
+  -webkit-text-stroke: 2px rgba(30, 30, 30, 0.85);
+  paint-order: stroke fill;
   justify-self: end;
   text-align: right;
   z-index: 1;
@@ -75,11 +76,12 @@ body {
 
 #time {
   font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 1);
+  -webkit-text-stroke: 2px rgba(30, 30, 30, 0.85);
+  paint-order: stroke fill;
   justify-self: start;
   z-index: 1;
   pointer-events: none;

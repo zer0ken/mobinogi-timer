@@ -95,6 +95,10 @@
       <span class="range-value" id="overlay-width-value">200px</span>
     </div>
   </div>
+  <div class="field">
+    <label>애니메이션</label>
+    <input type="checkbox" id="overlay-animation" checked>
+  </div>
 
   <hr>
 
@@ -141,6 +145,7 @@
     const opacityValue = document.getElementById("opacity-value");
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
+    const overlayAnimationInput = document.getElementById("overlay-animation");
     const manualSection = document.getElementById("manual-section");
     const captureSection = document.getElementById("capture-section");
 
@@ -151,6 +156,7 @@
         hotkeyName: currentHotkeyName,
         overlayOpacity: parseInt(opacityInput.value, 10) / 100,
         overlayWidth: parseInt(overlayWidthInput.value, 10),
+        overlayAnimation: overlayAnimationInput.checked,
         autoRepeat: autoRepeatInput.checked,
         packetCaptureEnabled: packetCaptureInput.checked,
         networkInterface: interfaceSelect.value,
@@ -165,6 +171,7 @@
 
     blindSeerSelect.addEventListener("change", saveSettings);
     packetCaptureInput.addEventListener("change", () => { updateSections(); saveSettings(); });
+    overlayAnimationInput.addEventListener("change", saveSettings);
     autoRepeatInput.addEventListener("change", saveSettings);
     interfaceSelect.addEventListener("change", saveSettings);
     opacityInput.addEventListener("input", () => {
@@ -227,6 +234,7 @@
       opacityValue.textContent = pct + "%";
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
+      overlayAnimationInput.checked = s.overlay_animation;
       autoRepeatInput.checked = s.auto_repeat;
       packetCaptureInput.checked = s.packet_capture_enabled;
       interfaceSelect.value = s.network_interface;

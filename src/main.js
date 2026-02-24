@@ -11,11 +11,10 @@ const barTrack = document.getElementById("bar-track");
 const appWindow = getCurrentWindow();
 const PAD = 8;
 
-const BOUNCE = "left 300ms cubic-bezier(0.18, 1.8, 0.58, 1), width 300ms cubic-bezier(0.18, 1.8, 0.58, 1)";
-const SMOOTH = "left 400ms ease, width 400ms ease";
-let prevState = "idle";
+const ANIMATE = "left 200ms ease, width 200ms ease";
+let animationEnabled = true;
 
-function updateBg(bounce) {
+function updateBg() {
   const labelRect = label.getBoundingClientRect();
   const barRect = barTrack.getBoundingClientRect();
 
@@ -27,12 +26,7 @@ function updateBg(bounce) {
     right = timeRect.right + PAD;
   }
 
-  if (bounce) {
-    bg.style.transition = BOUNCE;
-  } else {
-    bg.style.transition = SMOOTH;
-  }
-
+  bg.style.transition = animationEnabled ? ANIMATE : "none";
   bg.style.left = left + "px";
   bg.style.width = (right - left) + "px";
 }
@@ -40,11 +34,11 @@ function updateBg(bounce) {
 function applySettings(settings) {
   bg.style.background = `rgba(30, 30, 30, ${settings.overlay_opacity})`;
   barTrack.style.width = settings.overlay_width + "px";
+  animationEnabled = settings.overlay_animation;
   requestAnimationFrame(updateBg);
 }
 
 invoke("get_settings").then((settings) => {
-  // Disable transition for initial render
   bg.style.transition = "none";
   applySettings(settings);
   requestAnimationFrame(() => {
@@ -62,8 +56,6 @@ listen("settings-updated", () => {
 listen("timer-update", (event) => {
   const { state, percent, remaining, emblem } = event.payload;
   const secs = Math.ceil(remaining);
-  const stateChanged = state !== prevState;
-  prevState = state;
 
   if (state === "idle") {
     progress.className = "idle";
@@ -85,7 +77,7 @@ listen("timer-update", (event) => {
     time.textContent = secs + "s";
   }
 
-  requestAnimationFrame(() => updateBg(stateChanged));
+  requestAnimationFrame(updateBg);
 });
 
 bg.addEventListener("mousedown", () => {
