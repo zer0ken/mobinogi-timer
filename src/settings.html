@@ -6,9 +6,7 @@
   <title>Mobinogi Timer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      overflow: hidden;
-    }
+    html, body { overflow: hidden; }
     body {
       font-family: 'Segoe UI', sans-serif;
       padding: 20px;
@@ -17,17 +15,14 @@
     }
     h2 { margin-bottom: 16px; font-size: 16px; }
     .field {
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    label {
-      width: 100px;
-      font-size: 13px;
-    }
-    input[type="number"] {
-      width: 80px;
+    label { width: 100px; font-size: 13px; }
+    select {
+      flex: 1;
       padding: 4px 8px;
       background: #2d2d2d;
       border: 1px solid #555;
@@ -35,21 +30,9 @@
       color: #e0e0e0;
       font-size: 13px;
     }
-    .unit { font-size: 12px; color: #999; }
-    input[type="range"] {
-      width: 100px;
-      accent-color: #4caf50;
-    }
-    .range-value {
-      font-size: 12px;
-      color: #999;
-      min-width: 32px;
-    }
-    input[type="checkbox"] {
-      accent-color: #4caf50;
-      width: 16px;
-      height: 16px;
-    }
+    input[type="range"] { width: 100px; accent-color: #4caf50; }
+    .range-value { font-size: 12px; color: #999; min-width: 32px; }
+    input[type="checkbox"] { accent-color: #4caf50; width: 16px; height: 16px; }
     .hotkey-btn {
       padding: 4px 16px;
       min-width: 80px;
@@ -62,12 +45,11 @@
       text-align: center;
     }
     .hotkey-btn:hover { border-color: #888; }
-    .hotkey-btn.listening {
-      border-color: #4caf50;
-      color: #4caf50;
-    }
+    .hotkey-btn.listening { border-color: #4caf50; color: #4caf50; }
+    .info-text { font-size: 12px; color: #999; margin-bottom: 10px; }
+    hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
     .buttons {
-      margin-top: 16px;
+      margin-top: 12px;
       display: flex;
       gap: 8px;
       align-items: center;
@@ -82,72 +64,139 @@
       font-size: 13px;
     }
     button:hover { background: #444; }
-    button.primary {
-      background: #4caf50;
-      border-color: #4caf50;
-      color: #fff;
-    }
+    button.primary { background: #4caf50; border-color: #4caf50; color: #fff; }
     button.primary:hover { background: #45a049; }
-    .saved {
-      font-size: 12px;
-      color: #4caf50;
-      opacity: 0;
-      transition: opacity 0.2s;
-    }
+    .saved { font-size: 12px; color: #4caf50; opacity: 0; transition: opacity 0.2s; }
     .saved.show { opacity: 1; }
-    .hint {
-      margin-top: 16px;
-      font-size: 11px;
-      color: #777;
-      line-height: 1.6;
+    .hint { margin-top: 12px; font-size: 11px; color: #777; line-height: 1.6; }
+    .section-disabled select,
+    .section-disabled input,
+    .section-disabled button:not(.primary) {
+      opacity: 0.4;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
   <h2>모비노기 각성 타이머</h2>
+
+  <!-- Section 1: Rune Settings -->
   <div class="field">
-    <label for="duration">지속시간</label>
-    <input type="number" id="duration" min="1" max="600" value="30">
-    <span class="unit">초</span>
+    <label>엠블럼 룬</label>
+    <select id="emblem">
+      <option value="grand_mage">대마법사 (20초)</option>
+      <option value="distant_light">아득한 빛 (20초)</option>
+      <option value="broken_sky">부서진 하늘 (20초)</option>
+      <option value="mountain_lord">산맥 군주 (20초)</option>
+      <option value="scattering_sword">흩날리는 검 (35초)</option>
+      <option value="cracked_earth">갈라진 땅 (35초)</option>
+    </select>
   </div>
   <div class="field">
-    <label for="cooldown">쿨다운</label>
-    <input type="number" id="cooldown" min="1" max="600" value="60">
-    <span class="unit">초</span>
+    <label>눈먼예언자</label>
+    <select id="blind-seer">
+      <option value="none">미착용</option>
+      <option value="base">눈먼예언자</option>
+      <option value="plus">눈먼예언자+</option>
+      <option value="plusplus">눈먼예언자++</option>
+    </select>
   </div>
-  <div class="field">
-    <label>단축키</label>
-    <button type="button" id="hotkey-btn" class="hotkey-btn">`</button>
+  <div class="info-text">
+    지속: <b id="calc-duration">20</b>초 / 대기: <b id="calc-wait">70</b>초 (전체 <b id="calc-total">90</b>초)
   </div>
+
+  <hr>
+
+  <!-- Section 2: Manual Timer -->
+  <div id="manual-section">
+    <div class="field">
+      <label>단축키</label>
+      <button type="button" id="hotkey-btn" class="hotkey-btn">`</button>
+    </div>
+    <div class="field">
+      <label>자동 반복</label>
+      <input type="checkbox" id="auto-repeat" checked>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 3: Packet Capture -->
   <div class="field">
-    <label for="opacity">투명도</label>
+    <label style="width:auto">패킷 캡쳐 사용</label>
+    <input type="checkbox" id="packet-capture">
+  </div>
+  <div id="capture-section">
+    <div class="field">
+      <label>네트워크</label>
+      <select id="interface">
+        <option value="">기본값 - 자동 선택</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Common -->
+  <div class="field">
+    <label>투명도</label>
     <input type="range" id="opacity" min="10" max="100" value="85">
     <span class="range-value" id="opacity-value">85%</span>
   </div>
-  <div class="field">
-    <label for="auto-repeat">자동 반복</label>
-    <input type="checkbox" id="auto-repeat" checked>
-  </div>
   <div class="buttons">
     <button id="save" class="primary">저장</button>
-    <span id="saved-msg" class="saved">저장됨!</span>
+    <span id="saved-msg" class="saved">저장됨! (재시작 필요)</span>
   </div>
   <div class="hint">
-    단축키: 타이머 시작/재시작<br>
     설정창 선택 상태에서 오버레이 드래그 가능<br>
+    패킷 캡쳐 설정 변경 시 앱 재시작 필요<br>
     이 창을 닫으면 앱이 종료됩니다.
   </div>
+
   <script>
     const { invoke } = window.__TAURI__.core;
 
-    const durationInput = document.getElementById("duration");
-    const cooldownInput = document.getElementById("cooldown");
+    const emblemSelect = document.getElementById("emblem");
+    const blindSeerSelect = document.getElementById("blind-seer");
+    const calcDuration = document.getElementById("calc-duration");
+    const calcWait = document.getElementById("calc-wait");
+    const calcTotal = document.getElementById("calc-total");
     const hotkeyBtn = document.getElementById("hotkey-btn");
+    const autoRepeatInput = document.getElementById("auto-repeat");
+    const packetCaptureInput = document.getElementById("packet-capture");
+    const interfaceSelect = document.getElementById("interface");
     const opacityInput = document.getElementById("opacity");
     const opacityValue = document.getElementById("opacity-value");
-    const autoRepeatInput = document.getElementById("auto-repeat");
     const savedMsg = document.getElementById("saved-msg");
+    const manualSection = document.getElementById("manual-section");
+    const captureSection = document.getElementById("capture-section");
 
+    // Emblem durations
+    const EMBLEM_DURATION = {
+      grand_mage: 20, scattering_sword: 35, cracked_earth: 35,
+      distant_light: 20, broken_sky: 20, mountain_lord: 20
+    };
+    // Blind seer total cooldown
+    const BLIND_SEER_COOLDOWN = {
+      none: 90, base: 52, plus: 51, plusplus: 50
+    };
+
+    function updateCalc() {
+      const dur = EMBLEM_DURATION[emblemSelect.value] || 20;
+      const total = BLIND_SEER_COOLDOWN[blindSeerSelect.value] || 90;
+      const wait = total - dur;
+      calcDuration.textContent = dur;
+      calcWait.textContent = wait;
+      calcTotal.textContent = total;
+    }
+
+    function updateSections() {
+      const captureOn = packetCaptureInput.checked;
+      manualSection.classList.toggle("section-disabled", captureOn);
+      captureSection.classList.toggle("section-disabled", !captureOn);
+    }
+
+    emblemSelect.addEventListener("change", updateCalc);
+    blindSeerSelect.addEventListener("change", updateCalc);
+    packetCaptureInput.addEventListener("change", updateSections);
     opacityInput.addEventListener("input", () => {
       opacityValue.textContent = opacityInput.value + "%";
     });
@@ -164,16 +213,11 @@
       Space: 0x20, Tab: 0x09, CapsLock: 0x14,
       ScrollLock: 0x91, Pause: 0x13,
     };
-    // F1-F12
     for (let i = 1; i <= 12; i++) CODE_TO_VK[`F${i}`] = 0x70 + (i - 1);
-    // A-Z
     for (let i = 0; i < 26; i++) CODE_TO_VK[`Key${String.fromCharCode(65 + i)}`] = 65 + i;
-    // 0-9
     for (let i = 0; i < 10; i++) CODE_TO_VK[`Digit${i}`] = 48 + i;
-    // Numpad 0-9
     for (let i = 0; i < 10; i++) CODE_TO_VK[`Numpad${i}`] = 0x60 + i;
 
-    // event.code → display name
     const CODE_TO_NAME = {
       Backquote: "`", Minus: "-", Equal: "=",
       BracketLeft: "[", BracketRight: "]", Backslash: "\\",
@@ -197,19 +241,39 @@
     let currentHotkeyName = "`";
     let listening = false;
 
-    invoke("get_settings").then((settings) => {
-      durationInput.value = settings.duration_secs;
-      cooldownInput.value = settings.cooldown_secs;
-      currentHotkeyVk = settings.hotkey_vk;
-      currentHotkeyName = settings.hotkey_name;
+    // Load settings
+    invoke("get_settings").then((s) => {
+      emblemSelect.value = s.emblem_name;
+      blindSeerSelect.value = s.blind_seer;
+      currentHotkeyVk = s.hotkey_vk;
+      currentHotkeyName = s.hotkey_name;
       hotkeyBtn.textContent = currentHotkeyName;
-      const pct = Math.round(settings.overlay_opacity * 100);
+      const pct = Math.round(s.overlay_opacity * 100);
       opacityInput.value = pct;
       opacityValue.textContent = pct + "%";
-      autoRepeatInput.checked = settings.auto_repeat;
+      autoRepeatInput.checked = s.auto_repeat;
+      packetCaptureInput.checked = s.packet_capture_enabled;
+      interfaceSelect.value = s.network_interface;
+      updateCalc();
+      updateSections();
+    });
+
+    // Load network interfaces
+    invoke("list_interfaces").then((devices) => {
+      for (const d of devices) {
+        const opt = document.createElement("option");
+        opt.value = d.name;
+        opt.textContent = d.desc || d.name;
+        interfaceSelect.appendChild(opt);
+      }
+      // Re-apply saved value after populating
+      invoke("get_settings").then((s) => {
+        if (s.network_interface) interfaceSelect.value = s.network_interface;
+      });
     });
 
     hotkeyBtn.addEventListener("click", () => {
+      if (manualSection.classList.contains("section-disabled")) return;
       listening = true;
       hotkeyBtn.textContent = "키를 누르세요...";
       hotkeyBtn.classList.add("listening");
@@ -219,12 +283,8 @@
       if (!listening) return;
       e.preventDefault();
       e.stopPropagation();
-
-      // Ignore modifier-only keys
       if (["ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
-           "AltLeft", "AltRight", "MetaLeft", "MetaRight"].includes(e.code)) {
-        return;
-      }
+           "AltLeft", "AltRight", "MetaLeft", "MetaRight"].includes(e.code)) return;
 
       const vk = CODE_TO_VK[e.code];
       const name = CODE_TO_NAME[e.code];
@@ -233,7 +293,6 @@
         currentHotkeyName = name;
         hotkeyBtn.textContent = name;
       } else {
-        // Fallback: use the key value
         hotkeyBtn.textContent = e.key;
         currentHotkeyName = e.key;
       }
@@ -241,7 +300,6 @@
       hotkeyBtn.classList.remove("listening");
     });
 
-    // Cancel listening on Escape
     document.addEventListener("keydown", (e) => {
       if (listening && e.code === "Escape") {
         listening = false;
@@ -252,20 +310,18 @@
     }, true);
 
     document.getElementById("save").addEventListener("click", async () => {
-      const duration = parseInt(durationInput.value, 10);
-      const cooldown = parseInt(cooldownInput.value, 10);
-      if (duration > 0 && cooldown > 0) {
-        await invoke("save_settings", {
-          durationSecs: duration,
-          cooldownSecs: cooldown,
-          hotkeyVk: currentHotkeyVk,
-          hotkeyName: currentHotkeyName,
-          overlayOpacity: parseInt(opacityInput.value, 10) / 100,
-          autoRepeat: autoRepeatInput.checked,
-        });
-        savedMsg.classList.add("show");
-        setTimeout(() => savedMsg.classList.remove("show"), 1500);
-      }
+      await invoke("save_settings", {
+        emblemName: emblemSelect.value,
+        blindSeer: blindSeerSelect.value,
+        hotkeyVk: currentHotkeyVk,
+        hotkeyName: currentHotkeyName,
+        overlayOpacity: parseInt(opacityInput.value, 10) / 100,
+        autoRepeat: autoRepeatInput.checked,
+        packetCaptureEnabled: packetCaptureInput.checked,
+        networkInterface: interfaceSelect.value,
+      });
+      savedMsg.classList.add("show");
+      setTimeout(() => savedMsg.classList.remove("show"), 2000);
     });
   </script>
 </body>

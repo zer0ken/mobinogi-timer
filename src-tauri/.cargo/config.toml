@@ -1,0 +1,2 @@
+[env]
+LIB = { value = "C:\\npcap-sdk\\Lib\\x64", force = false }

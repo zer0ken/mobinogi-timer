@@ -1,3 +1,5 @@
+mod packet;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -5,11 +7,51 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
+// --- Emblem Data ---
+
+struct EmblemInfo {
+    key: &'static str,
+    buff_key: u32,
+    duration: f64,
+}
+
+const EMBLEMS: &[EmblemInfo] = &[
+    EmblemInfo { key: "grand_mage", buff_key: 122806656, duration: 20.0 },
+    EmblemInfo { key: "scattering_sword", buff_key: 355098955, duration: 35.0 },
+    EmblemInfo { key: "cracked_earth", buff_key: 1184371696, duration: 35.0 },
+    EmblemInfo { key: "distant_light", buff_key: 1590198662, duration: 20.0 },
+    EmblemInfo { key: "broken_sky", buff_key: 1703435864, duration: 20.0 },
+    EmblemInfo { key: "mountain_lord", buff_key: 2024838942, duration: 20.0 },
+];
+
+fn get_emblem(name: &str) -> Option<&'static EmblemInfo> {
+    EMBLEMS.iter().find(|e| e.key == name)
+}
+
+fn compute_duration(emblem_name: &str) -> f64 {
+    get_emblem(emblem_name).map(|e| e.duration).unwrap_or(20.0)
+}
+
+fn compute_cooldown(blind_seer: &str) -> f64 {
+    match blind_seer {
+        "base" => 52.0,
+        "plus" => 51.0,
+        "plusplus" => 50.0,
+        _ => 90.0,
+    }
+}
+
 // --- Settings ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Settings {
+    #[serde(default = "default_emblem_name")]
+    emblem_name: String,
+    #[serde(default = "default_blind_seer")]
+    blind_seer: String,
+    #[serde(default = "default_duration_secs")]
     duration_secs: f64,
+    #[serde(default = "default_cooldown_secs")]
     cooldown_secs: f64,
     #[serde(default = "default_hotkey_vk")]
     hotkey_vk: u32,
@@ -23,43 +65,38 @@ struct Settings {
     overlay_opacity: f64,
     #[serde(default = "default_auto_repeat")]
     auto_repeat: bool,
+    #[serde(default)]
+    packet_capture_enabled: bool,
+    #[serde(default)]
+    network_interface: String,
 }
 
-fn default_hotkey_vk() -> u32 {
-    0xC0
-}
-
-fn default_hotkey_name() -> String {
-    "`".to_string()
-}
-
-fn default_overlay_x() -> f64 {
-    760.0
-}
-
-fn default_overlay_y() -> f64 {
-    20.0
-}
-
-fn default_overlay_opacity() -> f64 {
-    0.85
-}
-
-fn default_auto_repeat() -> bool {
-    true
-}
+fn default_emblem_name() -> String { "grand_mage".to_string() }
+fn default_blind_seer() -> String { "none".to_string() }
+fn default_duration_secs() -> f64 { 20.0 }
+fn default_cooldown_secs() -> f64 { 90.0 }
+fn default_hotkey_vk() -> u32 { 0xC0 }
+fn default_hotkey_name() -> String { "`".to_string() }
+fn default_overlay_x() -> f64 { 760.0 }
+fn default_overlay_y() -> f64 { 20.0 }
+fn default_overlay_opacity() -> f64 { 0.85 }
+fn default_auto_repeat() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            duration_secs: 30.0,
-            cooldown_secs: 60.0,
+            emblem_name: default_emblem_name(),
+            blind_seer: default_blind_seer(),
+            duration_secs: default_duration_secs(),
+            cooldown_secs: default_cooldown_secs(),
             hotkey_vk: default_hotkey_vk(),
             hotkey_name: default_hotkey_name(),
             overlay_x: default_overlay_x(),
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             auto_repeat: default_auto_repeat(),
+            packet_capture_enabled: false,
+            network_interface: String::new(),
         }
     }
 }
@@ -73,10 +110,14 @@ fn settings_path() -> std::path::PathBuf {
 }
 
 fn load_settings() -> Settings {
-    fs::read_to_string(settings_path())
+    let mut settings: Settings = fs::read_to_string(settings_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Recompute duration/cooldown from emblem/blind_seer to ensure consistency
+    settings.duration_secs = compute_duration(&settings.emblem_name);
+    settings.cooldown_secs = compute_cooldown(&settings.blind_seer);
+    settings
 }
 
 fn save_settings_to_file(settings: &Settings) {
@@ -140,7 +181,7 @@ impl TimerState {
             }
             TimerPhase::Cooldown => {
                 if elapsed >= total {
-                    if self.settings.auto_repeat {
+                    if self.settings.auto_repeat && !self.settings.packet_capture_enabled {
                         self.phase = TimerPhase::Duration;
                         self.start_time = Some(Instant::now());
                         let pct = (1.0 - 0.0 / duration) * 100.0;
@@ -171,15 +212,22 @@ fn get_settings(state: tauri::State<'_, Arc<Mutex<TimerState>>>) -> Settings {
 fn save_settings(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<TimerState>>>,
-    duration_secs: f64,
-    cooldown_secs: f64,
+    emblem_name: String,
+    blind_seer: String,
     hotkey_vk: u32,
     hotkey_name: String,
     overlay_opacity: f64,
     auto_repeat: bool,
+    packet_capture_enabled: bool,
+    network_interface: String,
 ) {
+    let duration_secs = compute_duration(&emblem_name);
+    let cooldown_secs = compute_cooldown(&blind_seer);
+
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
+        emblem_name,
+        blind_seer,
         duration_secs,
         cooldown_secs,
         hotkey_vk,
@@ -188,9 +236,11 @@ fn save_settings(
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         auto_repeat,
+        packet_capture_enabled,
+        network_interface,
     };
     save_settings_to_file(&new_settings);
-    HOTKEY_VK.store(hotkey_vk, Ordering::Relaxed);
+    HOTKEY_VK.store(new_settings.hotkey_vk, Ordering::Relaxed);
     {
         let mut timer = state.lock().unwrap();
         timer.settings = new_settings;
@@ -198,8 +248,16 @@ fn save_settings(
     app.emit("settings-updated", ()).ok();
 }
 
-// --- Global flag for hotkey press (set by keyboard hook) ---
-static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
+#[tauri::command]
+fn list_interfaces() -> Vec<serde_json::Value> {
+    packet::list_devices()
+        .into_iter()
+        .map(|(name, desc)| serde_json::json!({ "name": name, "desc": desc }))
+        .collect()
+}
+
+// --- Global flag for hotkey press (set by keyboard hook or packet capture) ---
+pub static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
 static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 
 // --- App Setup ---
@@ -208,11 +266,25 @@ static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 pub fn run() {
     let settings = load_settings();
     HOTKEY_VK.store(settings.hotkey_vk, Ordering::Relaxed);
+
+    // Start packet capture thread if enabled
+    if settings.packet_capture_enabled {
+        let buff_key = get_emblem(&settings.emblem_name)
+            .map(|e| e.buff_key)
+            .unwrap_or(0);
+        let iface = settings.network_interface.clone();
+        if buff_key != 0 {
+            std::thread::spawn(move || {
+                packet::start_capture(buff_key, &iface);
+            });
+        }
+    }
+
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings)));
 
     tauri::Builder::default()
         .manage(timer_state.clone())
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -225,11 +297,11 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_millis(16));
 
-                // Check if hotkey was pressed via keyboard hook
+                // Check if hotkey was pressed via keyboard hook or packet capture
                 if HOTKEY_PRESSED.swap(false, Ordering::Relaxed) {
                     let mut timer = tick_state.lock().unwrap();
                     timer.start();
-                    eprintln!("[mobinogi] Hotkey pressed - timer started");
+                    eprintln!("[mobinogi] Timer started");
                 }
 
                 let (phase_str, percent, remaining) = {
