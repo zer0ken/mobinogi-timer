@@ -1,11 +1,6 @@
 use crate::DETECTED_BUFF_KEY;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-static PACKET_COUNT: AtomicU64 = AtomicU64::new(0);
-static PAYLOAD_COUNT: AtomicU64 = AtomicU64::new(0);
 
 const START_MARKER: [u8; 9] = [0x80, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 const END_MARKER: [u8; 9] = [0x12, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -81,14 +76,9 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
         }
         match cap.next_packet() {
             Ok(packet) => {
-                let pkt_num = PACKET_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
                 let payload = extract_tcp_payload(packet.data);
                 if payload.is_empty() {
                     continue;
-                }
-                let pay_num = PAYLOAD_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-                if pay_num <= 5 || pay_num % 100 == 0 {
-                    eprintln!("[mobinogi] pkt#{} payload#{} len={} buf={}", pkt_num, pay_num, payload.len(), buffer.len() + payload.len());
                 }
                 buffer.extend_from_slice(payload);
                 process_buffer(&mut buffer);
@@ -186,9 +176,6 @@ fn process_buffer(buffer: &mut Vec<u8>) {
         let remove_to = data_start + end_offset + END_MARKER.len();
         buffer.drain(..remove_to);
 
-        eprintln!("[mobinogi] Block found: {} bytes", block.len());
-        dump_block_data_types(&block);
-
         if let Some(buff_key) = check_block_for_any_buff(&block) {
             eprintln!("[mobinogi] Emblem awakening detected! buffKey={}", buff_key);
             DETECTED_BUFF_KEY.store(buff_key, Ordering::Relaxed);
@@ -198,25 +185,6 @@ fn process_buffer(buffer: &mut Vec<u8>) {
 
 fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
     data.windows(marker.len()).position(|w| w == marker)
-}
-
-fn dump_block_data_types(block: &[u8]) {
-    let mut offset = 0;
-    let mut types = Vec::new();
-    while offset + 9 <= block.len() {
-        let data_type =
-            u32::from_le_bytes(block[offset..offset + 4].try_into().unwrap_or([0; 4]));
-        let length =
-            u32::from_le_bytes(block[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
-                as usize;
-        let content_start = offset + 9;
-        if content_start + length > block.len() {
-            break;
-        }
-        types.push(format!("{}({}B)", data_type, length));
-        offset = content_start + length;
-    }
-    eprintln!("[mobinogi]   dataTypes: [{}]", types.join(", "));
 }
 
 // Virtual buff keys for runes that share buffKey 122806656
@@ -285,65 +253,6 @@ fn block_has_data_type(block: &[u8], target: u32) -> bool {
         offset = content_start + length;
     }
     false
-}
-
-fn log_buff_start_to_file(encode_type: u8, content: &[u8], full_block: &[u8]) {
-    let log_path = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("mobinogi-timer")
-        .join("buff_log.txt");
-
-    let mut file = match OpenOptions::new().create(true).append(true).open(&log_path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[mobinogi] Failed to open log file: {}", e);
-            return;
-        }
-    };
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-
-    let _ = writeln!(file, "=== BUFF_START detected at {} ===", now.as_secs());
-    let _ = writeln!(file, "encodeType: {}", encode_type);
-    let _ = writeln!(file, "content length: {} bytes", content.len());
-
-    // Hex dump of content
-    let _ = writeln!(file, "content (hex):");
-    for (i, chunk) in content.chunks(16).enumerate() {
-        let hex: Vec<String> = chunk.iter().map(|b| format!("{:02X}", b)).collect();
-        let ascii: String = chunk.iter().map(|&b| if (0x20..=0x7E).contains(&b) { b as char } else { '.' }).collect();
-        let _ = writeln!(file, "  {:04X}: {:<48} {}", i * 16, hex.join(" "), ascii);
-    }
-
-    // Also dump u32 LE values from content for easy comparison
-    let _ = writeln!(file, "content as u32 LE values:");
-    let mut off = 0;
-    while off + 4 <= content.len() {
-        let val = u32::from_le_bytes(content[off..off + 4].try_into().unwrap_or([0; 4]));
-        let _ = write!(file, "  [{}]={}", off, val);
-        off += 4;
-    }
-    let _ = writeln!(file);
-
-    // Dump all data types in the full block for context
-    let _ = writeln!(file, "full block data types:");
-    let mut boff = 0;
-    while boff + 9 <= full_block.len() {
-        let dt = u32::from_le_bytes(full_block[boff..boff + 4].try_into().unwrap_or([0; 4]));
-        let len = u32::from_le_bytes(full_block[boff + 4..boff + 8].try_into().unwrap_or([0; 4])) as usize;
-        let enc = full_block[boff + 8];
-        let cstart = boff + 9;
-        if cstart + len > full_block.len() {
-            break;
-        }
-        let _ = writeln!(file, "  dataType={} len={} encodeType={}", dt, len, enc);
-        boff = cstart + len;
-    }
-
-    let _ = writeln!(file);
-    eprintln!("[mobinogi] BUFF_START logged to {}", log_path.display());
 }
 
 fn scan_for_u32(data: &[u8], target: u32) -> bool {

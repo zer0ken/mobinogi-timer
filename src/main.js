@@ -1,71 +1,59 @@
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
-const { LogicalSize } = window.__TAURI__.dpi;
 
 const progress = document.getElementById("progress");
 const label = document.getElementById("label");
 const time = document.getElementById("time");
-const timerBar = document.getElementById("timer-bar");
+const bg = document.getElementById("bg");
 const barTrack = document.getElementById("bar-track");
 
 const appWindow = getCurrentWindow();
+const PAD = 8;
 
-// --- Layout: keep progress bar at a fixed screen position ---
+const BOUNCE = "left 300ms cubic-bezier(0.18, 1.8, 0.58, 1), width 300ms cubic-bezier(0.18, 1.8, 0.58, 1)";
+const SMOOTH = "left 400ms ease, width 400ms ease";
+let prevState = "idle";
 
-const ALL_LABELS = [
-  "각성 준비됨", "대마법사", "무자비한 포식자", "녹아내린 대지",
-  "흩날리는 검", "갈라진 땅", "아득한 빛", "부서진 하늘",
-  "산맥 군주", "쿨다운", "각성"
-];
+function updateBg(bounce) {
+  const labelRect = label.getBoundingClientRect();
+  const barRect = barTrack.getBoundingClientRect();
 
-let maxLabelWidth = 0;
-let maxTimeWidth = 0;
-let currentBarWidth = 200;
+  let left = labelRect.left - PAD;
+  let right = barRect.right + PAD;
 
-function measureMaxWidths() {
-  const m = document.createElement("span");
-  const s = getComputedStyle(label);
-  m.style.font = s.font;
-  m.style.fontWeight = s.fontWeight;
-  m.style.fontSize = s.fontSize;
-  m.style.fontFamily = s.fontFamily;
-  m.style.visibility = "hidden";
-  m.style.position = "absolute";
-  m.style.whiteSpace = "nowrap";
-  document.body.appendChild(m);
-
-  for (const t of ALL_LABELS) {
-    m.textContent = t;
-    maxLabelWidth = Math.max(maxLabelWidth, m.offsetWidth);
+  if (time.textContent) {
+    const timeRect = time.getBoundingClientRect();
+    right = timeRect.right + PAD;
   }
 
-  m.textContent = "00s";
-  maxTimeWidth = m.offsetWidth;
+  if (bounce) {
+    bg.style.transition = BOUNCE;
+  } else {
+    bg.style.transition = SMOOTH;
+  }
 
-  document.body.removeChild(m);
-}
-
-function updateWindowSize() {
-  const pad = 8, gap = 6;
-  const w = pad + maxLabelWidth + gap + currentBarWidth + gap + maxTimeWidth + pad;
-  appWindow.setSize(new LogicalSize(Math.ceil(w), 30));
-}
-
-function repositionBar() {
-  timerBar.style.marginLeft = (maxLabelWidth - label.offsetWidth) + "px";
+  bg.style.left = left + "px";
+  bg.style.width = (right - left) + "px";
 }
 
 function applySettings(settings) {
-  timerBar.style.background = `rgba(30, 30, 30, ${settings.overlay_opacity})`;
+  bg.style.background = `rgba(30, 30, 30, ${settings.overlay_opacity})`;
   barTrack.style.width = settings.overlay_width + "px";
-  currentBarWidth = settings.overlay_width;
-  updateWindowSize();
-  repositionBar();
+  requestAnimationFrame(updateBg);
 }
 
-measureMaxWidths();
-invoke("get_settings").then(applySettings);
+invoke("get_settings").then((settings) => {
+  // Disable transition for initial render
+  bg.style.transition = "none";
+  applySettings(settings);
+  requestAnimationFrame(() => {
+    updateBg();
+    requestAnimationFrame(() => {
+      bg.style.transition = "";
+    });
+  });
+});
 
 listen("settings-updated", () => {
   invoke("get_settings").then(applySettings);
@@ -74,27 +62,32 @@ listen("settings-updated", () => {
 listen("timer-update", (event) => {
   const { state, percent, remaining, emblem } = event.payload;
   const secs = Math.ceil(remaining);
+  const stateChanged = state !== prevState;
+  prevState = state;
 
   if (state === "idle") {
     progress.className = "idle";
     progress.style.width = "100%";
-    label.textContent = "각성 준비됨";
+    progress.style.background = "";
+    label.textContent = "각성";
     time.textContent = "";
   } else if (state === "duration") {
     progress.className = "";
+    progress.style.background = remaining <= 10 ? "#f44336" : "#64D2FF";
     progress.style.width = percent + "%";
     label.textContent = emblem || "각성";
     time.textContent = secs + "s";
   } else if (state === "cooldown") {
     progress.className = "cooldown";
+    progress.style.background = "";
     progress.style.width = percent + "%";
     label.textContent = "쿨다운";
     time.textContent = secs + "s";
   }
 
-  repositionBar();
+  requestAnimationFrame(() => updateBg(stateChanged));
 });
 
-timerBar.addEventListener("mousedown", () => {
+bg.addEventListener("mousedown", () => {
   appWindow.startDragging();
 });
