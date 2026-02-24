@@ -30,19 +30,13 @@
       border-radius: 4px;
       color: #e0e0e0;
       font-size: 13px;
+      cursor: pointer;
     }
     .range-wrap { display: flex; align-items: center; gap: 8px; }
-    input[type="range"] { flex: 1; accent-color: #4caf50; }
+    input[type="range"] { flex: 1; accent-color: #4caf50; cursor: ew-resize; }
     .range-value { font-size: 12px; color: #999; min-width: 32px; }
-    input[type="checkbox"] { accent-color: #4caf50; width: 16px; height: 16px; }
     hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
     .hint { margin-top: 12px; font-size: 11px; color: #777; line-height: 1.6; }
-    .section-disabled select,
-    .section-disabled input,
-    .section-disabled button:not(.primary) {
-      opacity: 0.4;
-      pointer-events: none;
-    }
   </style>
 </head>
 <body>
@@ -53,9 +47,9 @@
     <label>눈먼예언자</label>
     <select id="blind-seer">
       <option value="none">미착용</option>
-      <option value="base">눈먼예언자 (-38초)</option>
-      <option value="plus">눈먼예언자+ (-39초)</option>
-      <option value="plusplus">눈먼예언자++ (-40초)</option>
+      <option value="base">착용 (-38초)</option>
+      <option value="plus">초월 1단계 (-39초)</option>
+      <option value="plusplus">초월 2단계 (-40초)</option>
     </select>
   </div>
   <div class="field">
@@ -68,7 +62,7 @@
   <div class="field">
     <label>바 너비</label>
     <div class="range-wrap">
-      <input type="range" id="overlay-width" min="100" max="400" value="200">
+      <input type="range" id="overlay-width" min="20" max="400" value="200">
       <span class="range-value" id="overlay-width-value">200px</span>
     </div>
   </div>
@@ -77,49 +71,36 @@
 
   <!-- Packet Capture -->
   <div class="field">
-    <label style="width:auto">패킷 캡쳐 사용</label>
-    <input type="checkbox" id="packet-capture">
-  </div>
-  <div id="capture-section">
-    <div class="field">
-      <label>네트워크</label>
-      <select id="interface"></select>
-    </div>
+    <label>네트워크</label>
+    <select id="interface"></select>
   </div>
 
-  <div class="hint">
-    설정창 선택 상태에서 오버레이 드래그 가능<br>
-    이 창을 닫으면 앱이 종료됩니다.
+  <div class="hint" style="margin-top: 24px;">
+    이 창을 선택한 상태에서 오버레이를 드래그할 수 있습니다.<br>
+    이 창을 닫으면 앱이 종료됩니다.<br>
+    문제 제보나 기능 제안은 <a href="#" onclick="invoke('open_url',{url:'https://github.com/zer0ken/mobinogi-timer/issues'});return false;" style="color:#888;">여기</a>에 남겨주세요.
   </div>
 
   <script>
     const { invoke } = window.__TAURI__.core;
 
     const blindSeerSelect = document.getElementById("blind-seer");
-    const packetCaptureInput = document.getElementById("packet-capture");
     const interfaceSelect = document.getElementById("interface");
     const opacityInput = document.getElementById("opacity");
     const opacityValue = document.getElementById("opacity-value");
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
-    const captureSection = document.getElementById("capture-section");
 
     function saveSettings() {
       invoke("save_settings", {
         blindSeer: blindSeerSelect.value,
         overlayOpacity: parseInt(opacityInput.value, 10) / 100,
         overlayWidth: parseInt(overlayWidthInput.value, 10),
-        packetCaptureEnabled: packetCaptureInput.checked,
         networkInterface: interfaceSelect.value,
       });
     }
 
-    function updateSections() {
-      captureSection.classList.toggle("section-disabled", !packetCaptureInput.checked);
-    }
-
     blindSeerSelect.addEventListener("change", saveSettings);
-    packetCaptureInput.addEventListener("change", () => { updateSections(); saveSettings(); });
     interfaceSelect.addEventListener("change", saveSettings);
     opacityInput.addEventListener("input", () => {
       opacityValue.textContent = opacityInput.value + "%";
@@ -130,6 +111,15 @@
       saveSettings();
     });
 
+    function wheelStep(input, e) {
+      e.preventDefault();
+      const v = parseInt(input.value, 10) + (e.deltaY < 0 ? 1 : -1);
+      input.value = Math.max(input.min, Math.min(input.max, v));
+      input.dispatchEvent(new Event("input"));
+    }
+    opacityInput.addEventListener("wheel", (e) => wheelStep(opacityInput, e));
+    overlayWidthInput.addEventListener("wheel", (e) => wheelStep(overlayWidthInput, e));
+
     // Load settings
     invoke("get_settings").then((s) => {
       blindSeerSelect.value = s.blind_seer;
@@ -138,9 +128,7 @@
       opacityValue.textContent = pct + "%";
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
-      packetCaptureInput.checked = s.packet_capture_enabled;
       interfaceSelect.value = s.network_interface;
-      updateSections();
     });
 
     // Load network interfaces

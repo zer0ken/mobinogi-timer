@@ -54,8 +54,6 @@ struct Settings {
     #[serde(default = "default_overlay_width")]
     overlay_width: u32,
     #[serde(default)]
-    packet_capture_enabled: bool,
-    #[serde(default)]
     network_interface: String,
 }
 
@@ -74,7 +72,6 @@ impl Default for Settings {
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
-            packet_capture_enabled: false,
             network_interface: String::new(),
         }
     }
@@ -206,7 +203,6 @@ fn save_settings(
     blind_seer: String,
     overlay_opacity: f64,
     overlay_width: u32,
-    packet_capture_enabled: bool,
     network_interface: String,
 ) {
     let current_settings = state.lock().unwrap().settings.clone();
@@ -216,29 +212,21 @@ fn save_settings(
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         overlay_width,
-        packet_capture_enabled,
         network_interface,
     };
 
     save_settings_to_file(&new_settings);
     {
         let mut timer = state.lock().unwrap();
-        let capture_changed = new_settings.packet_capture_enabled != current_settings.packet_capture_enabled
-            || new_settings.network_interface != current_settings.network_interface;
-
-        if capture_changed {
+        if new_settings.network_interface != current_settings.network_interface {
             timer.capture_stop.store(true, Ordering::Relaxed);
-
-            if new_settings.packet_capture_enabled {
-                let stop = Arc::new(AtomicBool::new(false));
-                timer.capture_stop = stop.clone();
-                let iface = new_settings.network_interface.clone();
-                std::thread::spawn(move || {
-                    packet::start_capture(&iface, stop);
-                });
-            }
+            let stop = Arc::new(AtomicBool::new(false));
+            timer.capture_stop = stop.clone();
+            let iface = new_settings.network_interface.clone();
+            std::thread::spawn(move || {
+                packet::start_capture(&iface, stop);
+            });
         }
-
         timer.settings = new_settings;
     }
     app.emit("settings-updated", ()).ok();
@@ -259,6 +247,16 @@ fn list_interfaces() -> serde_json::Value {
     })
 }
 
+#[tauri::command]
+fn open_url(url: String) {
+    #[cfg(target_os = "windows")]
+    { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn(); }
+    #[cfg(target_os = "macos")]
+    { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+    #[cfg(target_os = "linux")]
+    { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+}
+
 // --- Global flags ---
 pub static DETECTED_BUFF_KEY: AtomicU32 = AtomicU32::new(0);
 
@@ -269,8 +267,8 @@ pub fn run() {
     let settings = load_settings();
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings.clone())));
 
-    // Start packet capture thread if enabled
-    if settings.packet_capture_enabled {
+    // Start packet capture thread
+    {
         let iface = settings.network_interface.clone();
         let stop = {
             let ts = timer_state.lock().unwrap();
@@ -283,7 +281,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(timer_state.clone())
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, open_url])
         .setup(move |app| {
             let handle = app.handle().clone();
 
