@@ -6,7 +6,7 @@
     "frontendDist": "../src"
   },
   "bundle": {
-    "active": true,
+    "active": false,
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
