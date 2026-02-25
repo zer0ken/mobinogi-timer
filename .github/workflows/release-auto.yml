@@ -16,6 +16,9 @@ on:
         type: string
         default: '- 변경사항을 입력하세요'
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -84,5 +87,3 @@ jobs:
             모비노기-각성-타이머-자동.exe
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

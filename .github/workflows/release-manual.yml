@@ -76,5 +76,3 @@ jobs:
             모비노기-각성-타이머-수동.exe
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
