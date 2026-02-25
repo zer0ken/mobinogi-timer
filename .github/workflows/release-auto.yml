@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., 2.0.0)'
+        description: 'Release version (e.g., 2026.2.25-auto)'
         required: true
         type: string
+      release_notes:
+        description: 'Release notes (변경사항만 입력, 나머지는 자동)'
+        required: false
+        type: string
+        default: '- 변경사항을 입력하세요'
 
 jobs:
   build-and-release:
@@ -59,9 +64,7 @@ jobs:
             ## 자동 버전 (패킷 캡처 기반 타이머)
 
             ### 변경사항
-            - 패킷 캡처로 엠블럼 각성 자동 감지
-            - 네트워크 인터페이스 설정
-            - 자동으로 정확한 타이밍에 타이머 시작
+            ${{ github.event.inputs.release_notes || '- 패킷 캡처로 엠블럼 각성 자동 감지\n- 네트워크 인터페이스 설정\n- 자동으로 정확한 타이밍에 타이머 시작' }}
 
             ### 설치
             1. [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치 **(필수)**
@@ -71,7 +74,7 @@ jobs:
 
             **필수 요구사항**: 패킷 캡처 기능을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
 
-            **참고**: 수동 버전(단축키 기반)을 원하시면 v1.x.x 릴리즈를 확인하세요.
+            **참고**: 수동 버전(단축키 기반)을 원하시면 *-manual 릴리즈를 확인하세요.
           files: |
             모비노기-각성-타이머-자동.exe
           draft: false
