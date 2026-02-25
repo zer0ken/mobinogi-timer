@@ -61,6 +61,9 @@ jobs:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: 수동 버전 v${{ steps.version.outputs.VERSION }}
           body: |
+            > [!WARNING]
+            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
+
             ### 변경사항
             ${{ github.event.inputs.release_notes || '- 설정한 단축키로 타이머 수동 시작\n- 엠블럼 선택 기능\n- 자동 반복 옵션' }}
 
