@@ -269,9 +269,20 @@ fn get_version(app: AppHandle) -> String {
 }
 
 #[tauri::command]
-fn check_update() -> serde_json::Value {
+fn check_update(app: AppHandle) -> serde_json::Value {
     let result = (|| -> Result<serde_json::Value, String> {
-        let body: String = ureq::get("https://api.github.com/repos/zer0ken/mobinogi-timer/releases/latest")
+        let current_version = app.config().version.clone().unwrap_or_default();
+        let current_major = current_version.split('.').next().unwrap_or("2026");
+
+        // Extract suffix from current version (e.g., "2026.2.2501-manual" -> Some("manual"))
+        let current_suffix = if let Some(dash_pos) = current_version.find('-') {
+            Some(&current_version[dash_pos + 1..])
+        } else {
+            None
+        };
+
+        // Get all releases
+        let body: String = ureq::get("https://api.github.com/repos/zer0ken/mobinogi-timer/releases")
             .header("User-Agent", "mobinogi-timer")
             .header("Accept", "application/vnd.github+json")
             .call()
@@ -279,10 +290,43 @@ fn check_update() -> serde_json::Value {
             .body_mut()
             .read_to_string()
             .map_err(|e| e.to_string())?;
-        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-        let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-        let url = json["html_url"].as_str().unwrap_or("").to_string();
-        Ok(serde_json::json!({ "tag": tag, "url": url }))
+
+        let releases: Vec<serde_json::Value> = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+
+        // Filter releases by major version and suffix
+        for release in releases {
+            if let Some(tag) = release["tag_name"].as_str() {
+                let version = tag.trim_start_matches('v');
+                if let Some(major) = version.split('.').next() {
+                    if major != current_major {
+                        continue;
+                    }
+
+                    // Extract suffix from release version
+                    let release_suffix = if let Some(dash_pos) = version.find('-') {
+                        Some(&version[dash_pos + 1..])
+                    } else {
+                        None
+                    };
+
+                    // Match suffix: both have same suffix or both have no suffix
+                    let suffix_matches = match (current_suffix, release_suffix) {
+                        (Some(c), Some(r)) => c == r,
+                        (None, None) => true,
+                        // Legacy: if current has no suffix, accept -auto versions (migration path)
+                        (None, Some("auto")) => true,
+                        _ => false,
+                    };
+
+                    if suffix_matches && !release["draft"].as_bool().unwrap_or(false) && !release["prerelease"].as_bool().unwrap_or(false) {
+                        let url = release["html_url"].as_str().unwrap_or("").to_string();
+                        return Ok(serde_json::json!({ "tag": version, "url": url }));
+                    }
+                }
+            }
+        }
+
+        Ok(serde_json::json!({ "tag": "", "url": "" }))
     })();
     match result {
         Ok(v) => v,
