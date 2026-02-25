@@ -1,3 +1,6 @@
+> [!WARNING]
+> 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 사용 전 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
+
 # 모비노기 각성 타이머
 
 마비노기 모바일 각성 패시브의 지속시간과 쿨다운을 추적하는 오버레이 타이머입니다.
@@ -17,9 +20,6 @@
 - 엠블럼 종류 자동 인식
 - Npcap 설치 필요
 - **다운로드**: [최신 릴리즈](https://github.com/zer0ken/mobinogi-timer/releases) (`mobinogi-timer-auto.exe`)
-
-> [!WARNING]
-> 자동 버전은 비인가 프로그램으로 판단될 여지가 있습니다. 사용 전 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
 
 ## 개발
 
