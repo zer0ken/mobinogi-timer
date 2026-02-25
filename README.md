@@ -1,5 +1,5 @@
 > [!WARNING]
-> 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 사용 전 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
+> 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
 
 # 모비노기 각성 타이머
 
