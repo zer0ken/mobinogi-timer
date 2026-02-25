@@ -61,6 +61,10 @@ jobs:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: 자동 버전 v${{ steps.version.outputs.VERSION }}
           body: |
+            > [!WARNING]
+            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 아래 이슈를 확인해주세요.
+            > https://github.com/zer0ken/mobinogi-timer/issues/2
+
             ## 자동 버전 (패킷 캡처 기반 타이머)
 
             ### 변경사항
@@ -72,9 +76,10 @@ jobs:
 
             ---
 
-            **필수 요구사항**: 패킷 캡처 기능을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
-
             **참고**: 수동 버전(단축키 기반)을 원하시면 *-manual 릴리즈를 확인하세요.
+
+            > [!NOTE]
+            > **필수 요구사항**: 패킷 캡처 기능 사용을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
           files: |
             모비노기-각성-타이머-자동.exe
           draft: false
