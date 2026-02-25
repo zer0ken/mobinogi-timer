@@ -24,10 +24,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout npcap branch
+      - name: Checkout auto branch
         uses: actions/checkout@v4
         with:
-          ref: npcap
+          ref: auto
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
