@@ -1,5 +1,5 @@
 {
-  "productName": "Mobinogi Timer",
+  "productName": "모비노기-각성-타이머-자동",
   "version": "2026.2.2501",
   "identifier": "com.mobinogi.timer",
   "build": {
@@ -17,7 +17,7 @@
     "windows": [
       {
         "label": "settings",
-        "title": "Mobinogi Timer",
+        "title": "모비노기 각성 타이머 (자동)",
         "url": "settings.html",
         "width": 400,
         "height": 400,
