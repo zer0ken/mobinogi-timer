@@ -41,7 +41,7 @@ jobs:
         run: npx tauri build
 
       - name: Rename executable
-        run: Copy-Item "src-tauri\target\release\mobinogi-timer.exe" "모비노기-각성-타이머-수동.exe"
+        run: Copy-Item "src-tauri\target\release\mobinogi-timer.exe" "mobinogi-timer-manual.exe"
         shell: pwsh
 
       - name: Get version
@@ -61,18 +61,14 @@ jobs:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: 수동 버전 v${{ steps.version.outputs.VERSION }}
           body: |
-            ## 수동 버전 (단축키 기반 타이머)
+            ## 수동 버전
 
             ### 변경사항
             ${{ github.event.inputs.release_notes || '- 설정한 단축키로 타이머 수동 시작\n- 엠블럼 선택 기능\n- 자동 반복 옵션' }}
 
             ### 설치
-            `모비노기-각성-타이머-수동.exe`를 다운로드하여 실행하세요.
-
-            ---
-
-            **참고**: 자동 버전(패킷 캡처)을 원하시면 *-auto 릴리즈를 확인하세요.
+            `mobinogi-timer-manual.exe`를 다운로드하여 실행하세요.
           files: |
-            모비노기-각성-타이머-수동.exe
+            mobinogi-timer-manual.exe
           draft: false
           prerelease: false
