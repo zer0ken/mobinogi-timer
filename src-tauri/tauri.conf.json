@@ -1,6 +1,6 @@
 {
   "productName": "모비노기-각성-타이머-자동",
-  "version": "2026.2.2501-auto",
+  "version": "2026.2.25-auto",
   "identifier": "com.mobinogi.timer",
   "build": {
     "frontendDist": "../src"
