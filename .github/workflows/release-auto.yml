@@ -74,7 +74,12 @@ jobs:
             1. [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치 **(필수)**
             2. `모비노기-각성-타이머-자동.exe`를 다운로드하여 실행
 
-            **필수 요구사항**: 패킷 캡처 기능 사용을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
+            ---
+
+            **참고**: 수동 버전(단축키 기반)을 원하시면 *-manual 릴리즈를 확인하세요.
+
+            > [!NOTE]
+            > **필수 요구사항**: 패킷 캡처 기능 사용을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
           files: |
             모비노기-각성-타이머-자동.exe
           draft: false
