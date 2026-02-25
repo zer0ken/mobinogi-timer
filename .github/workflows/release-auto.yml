@@ -71,8 +71,7 @@ jobs:
           name: 자동 버전 v${{ steps.version.outputs.VERSION }}
           body: |
             > [!WARNING]
-            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 아래 이슈를 확인해주세요.
-            > https://github.com/zer0ken/mobinogi-timer/issues/2
+            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
 
             ### 변경사항
             ${{ github.event.inputs.release_notes || '- 패킷 캡처로 엠블럼 각성 자동 감지\n- 네트워크 인터페이스 설정\n- 자동으로 정확한 타이밍에 타이머 시작' }}
