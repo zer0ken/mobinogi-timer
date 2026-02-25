@@ -1,0 +1,80 @@
+name: Release Auto Version
+
+on:
+  push:
+    tags:
+      - 'v*-auto'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 2.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout npcap branch
+        uses: actions/checkout@v4
+        with:
+          ref: npcap
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npx tauri build
+
+      - name: Rename executable
+        run: Copy-Item "src-tauri\target\release\mobinogi-timer.exe" "모비노기-각성-타이머-자동.exe"
+        shell: pwsh
+
+      - name: Get version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: 자동 버전 v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## 자동 버전 (패킷 캡처 기반 타이머)
+
+            ### 변경사항
+            - 패킷 캡처로 엠블럼 각성 자동 감지
+            - 네트워크 인터페이스 설정
+            - 자동으로 정확한 타이밍에 타이머 시작
+
+            ### 설치
+            1. [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치 **(필수)**
+            2. `모비노기-각성-타이머-자동.exe`를 다운로드하여 실행
+
+            ---
+
+            **필수 요구사항**: 패킷 캡처 기능을 위해 [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치가 필요합니다.
+
+            **참고**: 수동 버전(단축키 기반)을 원하시면 v1.x.x 릴리즈를 확인하세요.
+          files: |
+            모비노기-각성-타이머-자동.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
