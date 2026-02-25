@@ -1,8 +1,6 @@
-mod packet;
-
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -26,8 +24,18 @@ const EMBLEMS: &[EmblemInfo] = &[
     EmblemInfo { buff_key: 2024838942, duration: 20.0, name: "산맥 군주" },
 ];
 
-fn find_emblem_by_buff_key(buff_key: u32) -> Option<&'static EmblemInfo> {
-    EMBLEMS.iter().find(|e| e.buff_key == buff_key)
+fn find_emblem_by_id(id: &str) -> Option<&'static EmblemInfo> {
+    match id {
+        "grand_mage" => EMBLEMS.iter().find(|e| e.buff_key == 122806656),
+        "merciless_predator" => EMBLEMS.iter().find(|e| e.buff_key == 122806657),
+        "melted_earth" => EMBLEMS.iter().find(|e| e.buff_key == 122806658),
+        "scattering_sword" => EMBLEMS.iter().find(|e| e.buff_key == 355098955),
+        "cracked_earth" => EMBLEMS.iter().find(|e| e.buff_key == 1184371696),
+        "distant_light" => EMBLEMS.iter().find(|e| e.buff_key == 1590198662),
+        "broken_sky" => EMBLEMS.iter().find(|e| e.buff_key == 1703435864),
+        "mountain_lord" => EMBLEMS.iter().find(|e| e.buff_key == 2024838942),
+        _ => None,
+    }
 }
 
 fn compute_cooldown(blind_seer: &str) -> f64 {
@@ -53,8 +61,14 @@ struct Settings {
     overlay_opacity: f64,
     #[serde(default = "default_overlay_width")]
     overlay_width: u32,
-    #[serde(default)]
-    network_interface: String,
+    #[serde(default = "default_hotkey_vk")]
+    hotkey_vk: u32,
+    #[serde(default = "default_hotkey_name")]
+    hotkey_name: String,
+    #[serde(default = "default_auto_repeat")]
+    auto_repeat: bool,
+    #[serde(default = "default_selected_emblem")]
+    selected_emblem: String,
 }
 
 fn default_blind_seer() -> String { "none".to_string() }
@@ -62,6 +76,10 @@ fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.80 }
 fn default_overlay_width() -> u32 { 100 }
+fn default_hotkey_vk() -> u32 { 0xC0 }
+fn default_hotkey_name() -> String { "`".to_string() }
+fn default_auto_repeat() -> bool { true }
+fn default_selected_emblem() -> String { "grand_mage".to_string() }
 
 
 impl Default for Settings {
@@ -72,7 +90,10 @@ impl Default for Settings {
             overlay_y: default_overlay_y(),
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
-            network_interface: String::new(),
+            hotkey_vk: default_hotkey_vk(),
+            hotkey_name: default_hotkey_name(),
+            auto_repeat: default_auto_repeat(),
+            selected_emblem: default_selected_emblem(),
         }
     }
 }
@@ -116,7 +137,6 @@ struct TimerState {
     last_tick: Instant,
     active_emblem: String,
     settings: Settings,
-    capture_stop: Arc<AtomicBool>,
 }
 
 impl TimerState {
@@ -130,7 +150,14 @@ impl TimerState {
             last_tick: Instant::now(),
             active_emblem: String::new(),
             settings,
-            capture_stop: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn start(&mut self) {
+        if let Some(info) = find_emblem_by_id(&self.settings.selected_emblem) {
+            self.start_with_emblem(info.duration, info.duration, 0.0, info.name);
+        } else {
+            self.start_with_emblem(20.0, 20.0, 0.0, "각성");
         }
     }
 
@@ -178,8 +205,14 @@ impl TimerState {
             TimerPhase::Cooldown => {
                 self.cooldown_remaining -= dt;
                 if self.cooldown_remaining <= 0.0 {
-                    self.phase = TimerPhase::Idle;
-                    ("idle".into(), 0.0, 0.0, emblem)
+                    if self.settings.auto_repeat {
+                        self.start();
+                        let pct = (self.duration_remaining / self.duration_total) * 100.0;
+                        ("duration".into(), pct, self.duration_remaining, self.active_emblem.clone())
+                    } else {
+                        self.phase = TimerPhase::Idle;
+                        ("idle".into(), 0.0, 0.0, emblem)
+                    }
                 } else {
                     let pct = (1.0 - self.cooldown_remaining / self.cooldown_total) * 100.0;
                     ("cooldown".into(), pct, self.cooldown_remaining, emblem)
@@ -203,7 +236,10 @@ fn save_settings(
     blind_seer: String,
     overlay_opacity: f64,
     overlay_width: u32,
-    network_interface: String,
+    hotkey_vk: u32,
+    hotkey_name: String,
+    auto_repeat: bool,
+    selected_emblem: String,
 ) {
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
@@ -212,53 +248,19 @@ fn save_settings(
         overlay_y: current_settings.overlay_y,
         overlay_opacity,
         overlay_width,
-        network_interface,
+        hotkey_vk,
+        hotkey_name,
+        auto_repeat,
+        selected_emblem,
     };
 
     save_settings_to_file(&new_settings);
+    HOTKEY_VK.store(new_settings.hotkey_vk, Ordering::Relaxed);
     {
         let mut timer = state.lock().unwrap();
-        if new_settings.network_interface != current_settings.network_interface && is_npcap_installed() {
-            timer.capture_stop.store(true, Ordering::Relaxed);
-            let stop = Arc::new(AtomicBool::new(false));
-            timer.capture_stop = stop.clone();
-            let iface = new_settings.network_interface.clone();
-            std::thread::spawn(move || {
-                packet::start_capture(&iface, stop);
-            });
-        }
         timer.settings = new_settings;
     }
     app.emit("settings-updated", ()).ok();
-}
-
-#[tauri::command]
-fn list_interfaces() -> serde_json::Value {
-    if !is_npcap_installed() {
-        return serde_json::json!({ "devices": [], "default": "" });
-    }
-    let default_name = packet::find_default_device_name();
-
-    let devices: Vec<serde_json::Value> = packet::list_devices()
-        .into_iter()
-        .map(|(name, desc)| serde_json::json!({ "name": name, "desc": desc }))
-        .collect();
-
-    serde_json::json!({
-        "devices": devices,
-        "default": default_name,
-    })
-}
-
-fn is_npcap_installed() -> bool {
-    let sys = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-    let base = std::path::Path::new(&sys).join("System32");
-    base.join("Npcap").join("wpcap.dll").exists() || base.join("wpcap.dll").exists()
-}
-
-#[tauri::command]
-fn check_npcap() -> bool {
-    is_npcap_installed()
 }
 
 #[tauri::command]
@@ -298,36 +300,23 @@ fn open_url(url: String) {
     { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
 }
 
-// --- Global detected buff (packet → tick loop) ---
-pub struct DetectedBuff {
-    pub buff_key: u32,
-    pub detected_at: Instant,
-}
-pub static DETECTED_BUFF: Mutex<Option<DetectedBuff>> = Mutex::new(None);
+// --- Global hotkey state ---
+static HOTKEY_PRESSED: AtomicBool = AtomicBool::new(false);
+static HOTKEY_VK: AtomicU32 = AtomicU32::new(0xC0);
 
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = load_settings();
+    HOTKEY_VK.store(settings.hotkey_vk, Ordering::Relaxed);
     let timer_state = Arc::new(Mutex::new(TimerState::new(settings.clone())));
-
-    // Start packet capture thread (only if Npcap is installed)
-    if is_npcap_installed() {
-        let iface = settings.network_interface.clone();
-        let stop = {
-            let ts = timer_state.lock().unwrap();
-            ts.capture_stop.clone()
-        };
-        std::thread::spawn(move || {
-            packet::start_capture(&iface, stop);
-        });
-    }
 
     tauri::Builder::default()
         .manage(timer_state.clone())
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, list_interfaces, check_npcap, open_url, get_version, check_update])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, open_url, get_version, check_update])
         .setup(move |app| {
+            install_keyboard_hook();
             let handle = app.handle().clone();
 
             // --- Timer tick loop (16ms) ---
@@ -336,17 +325,10 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_millis(16));
 
-                // Check for auto-detected buff from packet capture
-                let detected = DETECTED_BUFF.lock().unwrap().take();
-                if let Some(det) = detected {
-                    let elapsed_secs = det.detected_at.elapsed().as_secs_f64();
-                    if let Some(info) = find_emblem_by_buff_key(det.buff_key) {
-                        let adjusted_dur = (info.duration - elapsed_secs).max(0.0);
-                        if adjusted_dur > 0.0 {
-                            let mut timer = tick_state.lock().unwrap();
-                            timer.start_with_emblem(adjusted_dur, info.duration, elapsed_secs, info.name);
-                        }
-                    }
+                // Check for hotkey press
+                if HOTKEY_PRESSED.swap(false, Ordering::Relaxed) {
+                    let mut timer = tick_state.lock().unwrap();
+                    timer.start();
                 }
 
                 let (phase_str, percent, remaining, emblem) = {
@@ -420,4 +402,83 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// --- Keyboard Hook ---
+
+#[cfg(target_os = "windows")]
+fn install_keyboard_hook() {
+    use std::ptr::null_mut;
+    use std::sync::atomic::Ordering;
+
+    type HHOOK = *mut std::ffi::c_void;
+    type LRESULT = isize;
+    type WPARAM = usize;
+    type LPARAM = isize;
+
+    const WH_KEYBOARD_LL: i32 = 13;
+    const WM_KEYDOWN: u32 = 0x0100;
+    const HC_ACTION: i32 = 0;
+
+    #[repr(C)]
+    struct KBDLLHOOKSTRUCT {
+        vk_code: u32,
+        scan_code: u32,
+        flags: u32,
+        time: u32,
+        dw_extra_info: usize,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowsHookExW(id_hook: i32, lpfn: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT, hmod: *mut std::ffi::c_void, dw_thread_id: u32) -> HHOOK;
+        fn CallNextHookEx(hhk: HHOOK, n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT;
+        fn GetMessageW(lpmsg: *mut MSG, hwnd: *mut std::ffi::c_void, wmsg_filter_min: u32, wmsg_filter_max: u32) -> i32;
+        fn TranslateMessage(lpmsg: *const MSG) -> i32;
+        fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT;
+    }
+
+    #[repr(C)]
+    struct MSG {
+        hwnd: *mut std::ffi::c_void,
+        message: u32,
+        w_param: WPARAM,
+        l_param: LPARAM,
+        time: u32,
+        pt: POINT,
+    }
+
+    #[repr(C)]
+    struct POINT {
+        x: i32,
+        y: i32,
+    }
+
+    unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION && wparam as u32 == WM_KEYDOWN {
+            let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
+            let target_vk = HOTKEY_VK.load(Ordering::Relaxed);
+            if kb.vk_code == target_vk {
+                HOTKEY_PRESSED.store(true, Ordering::Relaxed);
+            }
+        }
+        CallNextHookEx(null_mut(), code, wparam, lparam)
+    }
+
+    std::thread::spawn(|| unsafe {
+        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, hook_proc, null_mut(), 0);
+        if hook.is_null() {
+            return;
+        }
+        let mut msg: MSG = std::mem::zeroed();
+        while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn install_keyboard_hook() {
+    // No-op on non-Windows platforms
 }
