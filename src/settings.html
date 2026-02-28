@@ -17,11 +17,11 @@
     .field {
       margin-bottom: 10px;
       display: grid;
-      grid-template-columns: 80px 1fr;
+      grid-template-columns: 100px 1fr 70px;
       align-items: center;
       gap: 8px;
     }
-    label { font-size: 13px; }
+    label { font-size: 13px; text-align: left; }
     select {
       width: 100%;
       padding: 4px 8px;
@@ -32,9 +32,8 @@
       font-size: 13px;
       cursor: pointer;
     }
-    .range-wrap { display: flex; align-items: center; gap: 8px; }
-    input[type="range"] { flex: 1; accent-color: #4caf50; cursor: ew-resize; }
-    .range-value { font-size: 12px; color: #999; min-width: 32px; }
+    input[type="range"] { width: 100%; accent-color: #4caf50; cursor: ew-resize; }
+    .range-value { font-size: 12px; color: #999; text-align: right; }
     hr { border: none; border-top: 1px solid #444; margin: 12px 0; }
     .hint { margin-top: 12px; font-size: 13px; color: #777; line-height: 1.6; }
     .hotkey-button {
@@ -63,7 +62,7 @@
 
   <div class="field">
     <label>엠블럼</label>
-    <select id="selected-emblem">
+    <select id="selected-emblem" style="grid-column: 2 / 4;">
       <option value="grand_mage">대마법사 (20초)</option>
       <option value="merciless_predator">무자비한 포식자 (20초)</option>
       <option value="melted_earth">녹아내린 대지 (20초)</option>
@@ -76,40 +75,47 @@
   </div>
   <div class="field">
     <label>눈먼예언자</label>
-    <select id="blind-seer">
+    <select id="blind-seer" style="grid-column: 2 / 4;">
       <option value="none">미착용</option>
       <option value="base">착용 (-38초)</option>
       <option value="plus">초월 1단계 (-39초)</option>
       <option value="plusplus">초월 2단계 (-40초)</option>
     </select>
   </div>
-  <div style="margin-bottom: 10px; font-size: 12px; color: #999; text-align: center;" id="timer-hint">
-    지속시간: 20초 / 쿨다운: 90초
+  <div class="field">
+    <span></span>
+    <div style="font-size: 12px; color: #999; grid-column: 2 / 4;" id="timer-hint">
+      지속시간: 20초 / 쿨다운: 90초
+    </div>
   </div>
   <div class="field">
     <label>단축키</label>
-    <button id="hotkey-button" class="hotkey-button">`</button>
+    <button id="hotkey-button" class="hotkey-button" style="grid-column: 2 / 4;">`</button>
   </div>
   <div class="field">
     <label>자동 반복</label>
-    <input type="checkbox" id="auto-repeat" checked>
+    <input type="checkbox" id="auto-repeat" checked style="justify-self: start;">
+    <span></span>
   </div>
-
-  <hr>
-
   <div class="field">
     <label>투명도</label>
-    <div class="range-wrap">
-      <input type="range" id="opacity" min="0" max="100" value="85">
-      <span class="range-value" id="opacity-value">85%</span>
-    </div>
+    <input type="range" id="opacity" min="0" max="100" value="85">
+    <span class="range-value" id="opacity-value">85%</span>
   </div>
   <div class="field">
     <label>바 너비</label>
-    <div class="range-wrap">
-      <input type="range" id="overlay-width" min="20" max="400" value="200">
-      <span class="range-value" id="overlay-width-value">200px</span>
-    </div>
+    <input type="range" id="overlay-width" min="20" max="400" value="200">
+    <span class="range-value" id="overlay-width-value">200px</span>
+  </div>
+  <div class="field">
+    <label>각성 종료 알림</label>
+    <input type="range" id="duration-warning" min="0" max="20" value="10">
+    <span class="range-value" id="duration-warning-value">10초 전</span>
+  </div>
+  <div class="field">
+    <label>각성 준비 알림</label>
+    <input type="range" id="cooldown-warning" min="0" max="90" value="10" style="direction: rtl;">
+    <span class="range-value" id="cooldown-warning-value">10초 전</span>
   </div>
 
   <div class="hint" style="margin-top: 24px;">
@@ -130,6 +136,10 @@
     const opacityValue = document.getElementById("opacity-value");
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
+    const durationWarningInput = document.getElementById("duration-warning");
+    const durationWarningValue = document.getElementById("duration-warning-value");
+    const cooldownWarningInput = document.getElementById("cooldown-warning");
+    const cooldownWarningValue = document.getElementById("cooldown-warning-value");
     const timerHint = document.getElementById("timer-hint");
 
     let currentHotkeyVk = 0xC0;
@@ -203,6 +213,8 @@
         hotkeyName: currentHotkeyName,
         autoRepeat: autoRepeatCheckbox.checked,
         selectedEmblem: selectedEmblemSelect.value,
+        durationWarningThreshold: parseInt(durationWarningInput.value, 10),
+        cooldownWarningThreshold: parseInt(cooldownWarningInput.value, 10),
       });
     }
 
@@ -223,6 +235,14 @@
       overlayWidthValue.textContent = overlayWidthInput.value + "px";
       saveSettings();
     });
+    durationWarningInput.addEventListener("input", () => {
+      durationWarningValue.textContent = durationWarningInput.value + "초 전";
+      saveSettings();
+    });
+    cooldownWarningInput.addEventListener("input", () => {
+      cooldownWarningValue.textContent = cooldownWarningInput.value + "초 전";
+      saveSettings();
+    });
 
     function wheelStep(input, e) {
       e.preventDefault();
@@ -232,12 +252,14 @@
     }
     opacityInput.addEventListener("wheel", (e) => wheelStep(opacityInput, e));
     overlayWidthInput.addEventListener("wheel", (e) => wheelStep(overlayWidthInput, e));
+    durationWarningInput.addEventListener("wheel", (e) => wheelStep(durationWarningInput, e));
+    cooldownWarningInput.addEventListener("wheel", (e) => wheelStep(cooldownWarningInput, e));
 
     // Hotkey configuration
     hotkeyButton.addEventListener("click", () => {
       if (listeningForHotkey) return;
       listeningForHotkey = true;
-      hotkeyButton.textContent = "Press a key... (ESC to cancel)";
+      hotkeyButton.textContent = "키를 눌러주세요... (ESC로 취소)";
       hotkeyButton.classList.add("listening");
     });
 
@@ -275,6 +297,10 @@
       hotkeyButton.textContent = currentHotkeyName;
       autoRepeatCheckbox.checked = s.auto_repeat;
       selectedEmblemSelect.value = s.selected_emblem;
+      durationWarningInput.value = s.duration_warning_threshold;
+      durationWarningValue.textContent = s.duration_warning_threshold + "초 전";
+      cooldownWarningInput.value = s.cooldown_warning_threshold;
+      cooldownWarningValue.textContent = s.cooldown_warning_threshold + "초 전";
       updateTimerHint();
     });
 

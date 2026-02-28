@@ -69,6 +69,10 @@ struct Settings {
     auto_repeat: bool,
     #[serde(default = "default_selected_emblem")]
     selected_emblem: String,
+    #[serde(default = "default_duration_warning_threshold")]
+    duration_warning_threshold: u32,
+    #[serde(default = "default_cooldown_warning_threshold")]
+    cooldown_warning_threshold: u32,
 }
 
 fn default_blind_seer() -> String { "none".to_string() }
@@ -80,6 +84,8 @@ fn default_hotkey_vk() -> u32 { 0xC0 }
 fn default_hotkey_name() -> String { "`".to_string() }
 fn default_auto_repeat() -> bool { true }
 fn default_selected_emblem() -> String { "grand_mage".to_string() }
+fn default_duration_warning_threshold() -> u32 { 10 }
+fn default_cooldown_warning_threshold() -> u32 { 10 }
 
 
 impl Default for Settings {
@@ -94,6 +100,8 @@ impl Default for Settings {
             hotkey_name: default_hotkey_name(),
             auto_repeat: default_auto_repeat(),
             selected_emblem: default_selected_emblem(),
+            duration_warning_threshold: default_duration_warning_threshold(),
+            cooldown_warning_threshold: default_cooldown_warning_threshold(),
         }
     }
 }
@@ -240,6 +248,8 @@ fn save_settings(
     hotkey_name: String,
     auto_repeat: bool,
     selected_emblem: String,
+    duration_warning_threshold: u32,
+    cooldown_warning_threshold: u32,
 ) {
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
@@ -252,6 +262,8 @@ fn save_settings(
         hotkey_name,
         auto_repeat,
         selected_emblem,
+        duration_warning_threshold,
+        cooldown_warning_threshold,
     };
 
     save_settings_to_file(&new_settings);
