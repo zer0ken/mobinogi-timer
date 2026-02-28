@@ -92,6 +92,20 @@
       <span class="range-value" id="overlay-width-value">200px</span>
     </div>
   </div>
+  <div class="field">
+    <label>각성 종료 알림</label>
+    <div class="range-wrap">
+      <input type="range" id="duration-warning" min="0" max="20" value="10">
+      <span class="range-value" id="duration-warning-value">10초 전</span>
+    </div>
+  </div>
+  <div class="field">
+    <label>각성 준비 알림</label>
+    <div class="range-wrap">
+      <input type="range" id="cooldown-warning" min="0" max="90" value="10" style="direction: rtl;">
+      <span class="range-value" id="cooldown-warning-value">10초 전</span>
+    </div>
+  </div>
 
   <hr>
 
@@ -118,6 +132,10 @@
     const opacityValue = document.getElementById("opacity-value");
     const overlayWidthInput = document.getElementById("overlay-width");
     const overlayWidthValue = document.getElementById("overlay-width-value");
+    const durationWarningInput = document.getElementById("duration-warning");
+    const durationWarningValue = document.getElementById("duration-warning-value");
+    const cooldownWarningInput = document.getElementById("cooldown-warning");
+    const cooldownWarningValue = document.getElementById("cooldown-warning-value");
 
     function saveSettings() {
       invoke("save_settings", {
@@ -125,6 +143,8 @@
         overlayOpacity: parseInt(opacityInput.value, 10) / 100,
         overlayWidth: parseInt(overlayWidthInput.value, 10),
         networkInterface: interfaceSelect.value,
+        durationWarningThreshold: parseInt(durationWarningInput.value, 10),
+        cooldownWarningThreshold: parseInt(cooldownWarningInput.value, 10),
       });
     }
 
@@ -138,6 +158,14 @@
       overlayWidthValue.textContent = overlayWidthInput.value + "px";
       saveSettings();
     });
+    durationWarningInput.addEventListener("input", () => {
+      durationWarningValue.textContent = durationWarningInput.value + "초 전";
+      saveSettings();
+    });
+    cooldownWarningInput.addEventListener("input", () => {
+      cooldownWarningValue.textContent = cooldownWarningInput.value + "초 전";
+      saveSettings();
+    });
 
     function wheelStep(input, e) {
       e.preventDefault();
@@ -147,6 +175,8 @@
     }
     opacityInput.addEventListener("wheel", (e) => wheelStep(opacityInput, e));
     overlayWidthInput.addEventListener("wheel", (e) => wheelStep(overlayWidthInput, e));
+    durationWarningInput.addEventListener("wheel", (e) => wheelStep(durationWarningInput, e));
+    cooldownWarningInput.addEventListener("wheel", (e) => wheelStep(cooldownWarningInput, e));
 
     // Check Npcap
     function recheckNpcap() {
@@ -171,6 +201,10 @@
       opacityValue.textContent = pct + "%";
       overlayWidthInput.value = s.overlay_width;
       overlayWidthValue.textContent = s.overlay_width + "px";
+      durationWarningInput.value = s.duration_warning_threshold;
+      durationWarningValue.textContent = s.duration_warning_threshold + "초 전";
+      cooldownWarningInput.value = s.cooldown_warning_threshold;
+      cooldownWarningValue.textContent = s.cooldown_warning_threshold + "초 전";
       interfaceSelect.value = s.network_interface;
     });
 

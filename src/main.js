@@ -11,6 +11,9 @@ const barTrack = document.getElementById("bar-track");
 const appWindow = getCurrentWindow();
 const PAD = 8;
 
+let durationWarningThreshold = 10;
+let cooldownWarningThreshold = 10;
+
 function updateBg() {
   const labelRect = label.getBoundingClientRect();
   const barRect = barTrack.getBoundingClientRect();
@@ -30,6 +33,8 @@ function updateBg() {
 function applySettings(settings) {
   bg.style.background = `rgba(30, 30, 30, ${settings.overlay_opacity})`;
   barTrack.style.width = settings.overlay_width + "px";
+  durationWarningThreshold = settings.duration_warning_threshold;
+  cooldownWarningThreshold = settings.cooldown_warning_threshold;
   requestAnimationFrame(updateBg);
 }
 
@@ -57,13 +62,13 @@ listen("timer-update", (event) => {
     time.textContent = "";
   } else if (state === "duration") {
     progress.className = "";
-    progress.style.background = remaining <= 10 ? "#f44336" : "#64D2FF";
+    progress.style.background = remaining <= durationWarningThreshold ? "#f44336" : "#64D2FF";
     progress.style.width = percent + "%";
     label.textContent = emblem || "각성";
     time.textContent = secs + "s";
   } else if (state === "cooldown") {
     progress.className = "cooldown";
-    progress.style.background = "";
+    progress.style.background = remaining <= cooldownWarningThreshold ? "#ff9800" : "";
     progress.style.width = percent + "%";
     label.textContent = "쿨다운";
     time.textContent = secs + "s";

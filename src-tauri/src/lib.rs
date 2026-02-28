@@ -55,6 +55,10 @@ struct Settings {
     overlay_width: u32,
     #[serde(default)]
     network_interface: String,
+    #[serde(default = "default_duration_warning_threshold")]
+    duration_warning_threshold: u32,
+    #[serde(default = "default_cooldown_warning_threshold")]
+    cooldown_warning_threshold: u32,
 }
 
 fn default_blind_seer() -> String { "none".to_string() }
@@ -62,6 +66,8 @@ fn default_overlay_x() -> f64 { 760.0 }
 fn default_overlay_y() -> f64 { 20.0 }
 fn default_overlay_opacity() -> f64 { 0.80 }
 fn default_overlay_width() -> u32 { 100 }
+fn default_duration_warning_threshold() -> u32 { 10 }
+fn default_cooldown_warning_threshold() -> u32 { 10 }
 
 
 impl Default for Settings {
@@ -73,6 +79,8 @@ impl Default for Settings {
             overlay_opacity: default_overlay_opacity(),
             overlay_width: default_overlay_width(),
             network_interface: String::new(),
+            duration_warning_threshold: default_duration_warning_threshold(),
+            cooldown_warning_threshold: default_cooldown_warning_threshold(),
         }
     }
 }
@@ -204,6 +212,8 @@ fn save_settings(
     overlay_opacity: f64,
     overlay_width: u32,
     network_interface: String,
+    duration_warning_threshold: u32,
+    cooldown_warning_threshold: u32,
 ) {
     let current_settings = state.lock().unwrap().settings.clone();
     let new_settings = Settings {
@@ -213,6 +223,8 @@ fn save_settings(
         overlay_opacity,
         overlay_width,
         network_interface,
+        duration_warning_threshold,
+        cooldown_warning_threshold,
     };
 
     save_settings_to_file(&new_settings);
