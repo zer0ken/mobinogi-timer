@@ -20,7 +20,7 @@
         "title": "모비노기 각성 타이머 (수동)",
         "url": "settings.html",
         "width": 400,
-        "height": 600,
+        "height": 500,
         "resizable": false,
         "center": true
       },
