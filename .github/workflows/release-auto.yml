@@ -1,0 +1,86 @@
+name: Release Auto Version
+
+on:
+  push:
+    tags:
+      - 'v*-auto'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 2026.2.25-auto)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes (변경사항만 입력, 나머지는 자동)'
+        required: false
+        type: string
+        default: '- 변경사항을 입력하세요'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout auto branch
+        uses: actions/checkout@v4
+        with:
+          ref: auto
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Npcap SDK
+        run: |
+          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-sdk-1.13.zip" -OutFile "npcap-sdk.zip"
+          Expand-Archive -Path "npcap-sdk.zip" -DestinationPath "C:\npcap-sdk"
+        shell: pwsh
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npx tauri build
+
+      - name: Rename executable
+        run: Copy-Item "src-tauri\target\release\mobinogi-timer.exe" "mobinogi-timer-auto.exe"
+        shell: pwsh
+
+      - name: Get version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: 자동 버전 v${{ steps.version.outputs.VERSION }}
+          body: |
+            > [!WARNING]
+            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 아래 이슈를 확인해주세요.
+            > https://github.com/zer0ken/mobinogi-timer/issues/2
+
+            ### 변경사항
+            ${{ github.event.inputs.release_notes || '- 패킷 캡처로 엠블럼 각성 자동 감지\n- 네트워크 인터페이스 설정\n- 자동으로 정확한 타이밍에 타이머 시작' }}
+
+            ### 설치
+            1. [Npcap](https://npcap.com/dist/npcap-1.87.exe) 설치 **(필수)**
+            2. `mobinogi-timer-auto.exe`를 다운로드하여 실행
+          files: |
+            mobinogi-timer-auto.exe
+          draft: false
+          prerelease: false
