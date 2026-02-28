@@ -55,14 +55,35 @@ jobs:
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
+      - name: Read release notes
+        id: release_notes
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $notes = "${{ github.event.inputs.release_notes }}"
+          } else {
+            if (Test-Path "RELEASE_NOTES.md") {
+              $notes = Get-Content "RELEASE_NOTES.md" -Raw
+            } else {
+              $notes = "- 업데이트"
+            }
+          }
+          $notes = $notes -replace "`r`n", "`n"
+          "NOTES<<EOF" >> $env:GITHUB_OUTPUT
+          "$notes" >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: 수동 버전 v${{ steps.version.outputs.VERSION }}
           body: |
+            > [!WARNING]
+            > 이 프로그램은 비인가 프로그램으로 판단될 여지가 있습니다. 프로그램 설치 전에 [이슈 #2](https://github.com/zer0ken/mobinogi-timer/issues/2)를 확인해주세요.
+
             ### 변경사항
-            ${{ github.event.inputs.release_notes || '- 설정한 단축키로 타이머 수동 시작\n- 엠블럼 선택 기능\n- 자동 반복 옵션' }}
+            ${{ steps.release_notes.outputs.NOTES }}
 
             ### 설치
             `mobinogi-timer-manual.exe`를 다운로드하여 실행하세요.
