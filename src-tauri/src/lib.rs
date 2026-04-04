@@ -11,19 +11,18 @@ use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 struct EmblemInfo {
     buff_key: u32,
-    duration: f64,
     name: &'static str,
 }
 
 const EMBLEMS: &[EmblemInfo] = &[
-    EmblemInfo { buff_key: 122806656, duration: 20.0, name: "대마법사" },
-    EmblemInfo { buff_key: 122806657, duration: 20.0, name: "무자비한 포식자" },
-    EmblemInfo { buff_key: 122806658, duration: 20.0, name: "녹아내린 대지" },
-    EmblemInfo { buff_key: 355098955, duration: 35.0, name: "흩날리는 검" },
-    EmblemInfo { buff_key: 1184371696, duration: 35.0, name: "갈라진 땅" },
-    EmblemInfo { buff_key: 1590198662, duration: 20.0, name: "아득한 빛" },
-    EmblemInfo { buff_key: 1703435864, duration: 20.0, name: "부서진 하늘" },
-    EmblemInfo { buff_key: 2024838942, duration: 20.0, name: "산맥 군주" },
+    EmblemInfo { buff_key: 122806656, name: "대마법사" },
+    EmblemInfo { buff_key: 122806657, name: "무자비한 포식자" },
+    EmblemInfo { buff_key: 122806658, name: "녹아내린 대지" },
+    EmblemInfo { buff_key: 355098955, name: "흩날리는 검" },
+    EmblemInfo { buff_key: 1184371696, name: "갈라진 땅" },
+    EmblemInfo { buff_key: 1590198662, name: "아득한 빛" },
+    EmblemInfo { buff_key: 1703435864, name: "부서진 하늘" },
+    EmblemInfo { buff_key: 2024838942, name: "산맥 군주" },
 ];
 
 fn find_emblem_by_buff_key(buff_key: u32) -> Option<&'static EmblemInfo> {
@@ -357,6 +356,7 @@ fn open_url(url: String) {
 // --- Global detected buff (packet → tick loop) ---
 pub struct DetectedBuff {
     pub buff_key: u32,
+    pub duration: f64,
     pub detected_at: Instant,
 }
 pub static DETECTED_BUFF: Mutex<Option<DetectedBuff>> = Mutex::new(None);
@@ -397,10 +397,10 @@ pub fn run() {
                 if let Some(det) = detected {
                     let elapsed_secs = det.detected_at.elapsed().as_secs_f64();
                     if let Some(info) = find_emblem_by_buff_key(det.buff_key) {
-                        let adjusted_dur = (info.duration - elapsed_secs).max(0.0);
+                        let adjusted_dur = (det.duration - elapsed_secs).max(0.0);
                         if adjusted_dur > 0.0 {
                             let mut timer = tick_state.lock().unwrap();
-                            timer.start_with_emblem(adjusted_dur, info.duration, elapsed_secs, info.name);
+                            timer.start_with_emblem(adjusted_dur, det.duration, elapsed_secs, info.name);
                         }
                     }
                 }
