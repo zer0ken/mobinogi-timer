@@ -1,24 +1,55 @@
 <claude-mem-context>
-# Recent Activity
+# packet.rs - 패킷 감지 구조 (2026-04-09 기준)
 
-## 2026-02-25: lib.rs 주요 변경
+## 상수 (업데이트 시 수정 대상)
+- `START_MARKER`, `END_MARKER`: 9바이트 프레임 마커
+- `SELF_DAMAGE_DATA_TYPE` (20919): 전투 타격 패킷
+- `BUFF_START_DATA_TYPE` (100055): 버프 적용 패킷
+- `EMBLEM_FIELD_KEYS`: field[16:20] → buff_key 매핑 테이블
 
-### check_update 함수
-- 접미사 필터링 추가: `-manual`, `-auto` 별도 추적
-- 레거시 마이그레이션: 접미사 없는 버전 → `-auto` 자동 매칭
-- 모든 릴리즈 조회 후 메이저 버전 + 접미사로 필터링
+## 엠블럼 식별 방식
+BUFF_START content[16:20] 4바이트가 엠블럼별 고유 식별자.
+각성 시 고유값 1개 + 공유값(`80 E1 51 07`, `CC 79 DC 1B`) 2개가 세트로 등장.
 
-### TimerState (main 브랜치)
-- `start()` 메서드: `selected_emblem`로 타이머 시작
-- 자동 반복 지원: cooldown 종료 시 `auto_repeat` 체크
+| 엠블럼 | field[16:20] |
+|--------|-------------|
+| 대마법사 | `9E 5A 0D 72` |
+| 무자비한 포식자 | `A8 0F 5F 44` |
+| 녹아내린 대지 | `CA 1A 9C 5F` |
+| 아득한 빛 | `86 81 C8 5E` |
+| 흩날리는 검 | `4B 61 2A 15` |
+| 갈라진 땅 | `F0 13 98 46` |
+| 부서진 하늘 | `58 5E 88 65` |
+| 산맥 군주 | `1E 97 B0 78` |
 
-### Global State (main 브랜치)
-- `HOTKEY_PRESSED`: 키보드 훅에서 설정
-- `HOTKEY_VK`: 현재 단축키 가상 키 코드
-- `install_keyboard_hook()`: Windows 키보드 훅 설치
+## BUFF_START 패킷 구조 (37바이트)
+- [0:8]   user_id (u64 LE)
+- [8:16]  buff_instance_id (u64 LE) — 세션마다 변동
+- [16:20] buff_type_field (4B) — 엠블럼 식별자
+- [20:24] duration (f32 LE) — 버프 지속시간(초)
+- [24:28] counter (u32 LE)
+- [28:36] user_id 반복 (u64 LE)
+- [36]    flag (u8)
 
-### Settings (main 브랜치)
-- `hotkey_vk`, `hotkey_name`: 단축키 설정
-- `auto_repeat`: 자동 반복 옵션
-- `selected_emblem`: 선택된 엠블럼
+## SELF_DAMAGE 패킷 구조
+- [0:8]  user_id (u64 LE) — 공격한 쪽
+- [8:16] target_id (u64 LE) — 맞은 쪽
+
+## 디버그 로깅
+`#[cfg(debug_assertions)]`로 dev 빌드에서만 활성화.
+`%APPDATA%\mobinogi-timer\debug.log`에 기록.
+캡처 시작 시 로그 초기화, 경과 시간 형식(`[+ 0.000s]`).
+
+# lib.rs - 주요 구조
+
+## EMBLEMS 테이블
+buff_key → name 매핑. duration은 패킷에서 직접 읽으므로 제거됨.
+
+## DetectedBuff
+`buff_key`, `duration`, `detected_at` 포함.
+packet.rs에서 설정, lib.rs tick loop에서 소비.
+
+## TimerState
+- `start_with_emblem(remaining, total, elapsed, name)`: 각성 타이머 시작
+- cooldown은 `compute_cooldown(&blind_seer)`로 계산
 </claude-mem-context>
