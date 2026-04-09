@@ -172,6 +172,8 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
         candidates: [0; 2],
         buff_queue: Vec::new(),
     };
+    #[cfg(debug_assertions)]
+    let mut raw_count = 0u32;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -182,6 +184,13 @@ pub fn start_capture(interface_name: &str, stop: Arc<AtomicBool>) {
                 let payload = extract_tcp_payload(packet.data);
                 if payload.is_empty() {
                     continue;
+                }
+                #[cfg(debug_assertions)]
+                {
+                    raw_count += 1;
+                    if raw_count <= 5 {
+                        dlog(&format!("RAW payload #{}: {}", raw_count, hex_str(payload)));
+                    }
                 }
                 buffer.extend_from_slice(payload);
                 process_buffer(&mut buffer, &mut state);
