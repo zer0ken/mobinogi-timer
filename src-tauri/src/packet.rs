@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-const START_MARKER: [u8; 9] = [0x82, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-const END_MARKER: [u8; 9] = [0x18, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-const BUFF_START_DATA_TYPE: u32 = 100055;
-const SELF_DAMAGE_DATA_TYPE: u32 = 20919;
+const START_MARKER: [u8; 9] = [0x83, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+const END_MARKER: [u8; 9] = [0x1A, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+const BUFF_START_DATA_TYPE: u32 = 110055;
+const SELF_DAMAGE_DATA_TYPE: u32 = 20937;
 
 /// Maps field[16:20] bytes in BUFF_START packets to (buff_key, emblem name).
 /// buff_key must match an entry in lib.rs EMBLEMS.

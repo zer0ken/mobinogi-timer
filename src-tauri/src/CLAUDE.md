@@ -1,10 +1,10 @@
 <claude-mem-context>
-# packet.rs - 패킷 감지 구조 (2026-04-09 기준)
+# packet.rs - 패킷 감지 구조 (2026-04-23 기준)
 
 ## 상수 (업데이트 시 수정 대상)
 - `START_MARKER`, `END_MARKER`: 9바이트 프레임 마커
-- `SELF_DAMAGE_DATA_TYPE` (20919): 전투 타격 패킷
-- `BUFF_START_DATA_TYPE` (100055): 버프 적용 패킷
+- `SELF_DAMAGE_DATA_TYPE` (20937): 전투 타격 패킷
+- `BUFF_START_DATA_TYPE` (110055): 버프 적용 패킷
 - `EMBLEM_FIELD_KEYS`: field[16:20] → buff_key 매핑 테이블
 
 ## 엠블럼 식별 방식
@@ -22,7 +22,7 @@ BUFF_START content[16:20] 4바이트가 엠블럼별 고유 식별자.
 | 부서진 하늘 | `58 5E 88 65` |
 | 산맥 군주 | `1E 97 B0 78` |
 
-## BUFF_START 패킷 구조 (37바이트)
+## BUFF_START 패킷 구조 (36바이트)
 - [0:8]   user_id (u64 LE)
 - [8:16]  buff_instance_id (u64 LE) — 세션마다 변동
 - [16:20] buff_type_field (4B) — 엠블럼 식별자
