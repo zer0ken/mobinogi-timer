@@ -44,8 +44,9 @@
 - **manual**: 수동 버전 (키보드 훅)
 - **auto**: 자동 버전 (패킷 캡처) ← 현재 브랜치
 
-### 릴리즈
-- GitHub Actions로 자동 빌드 및 릴리즈
+### 릴리즈 순서 (⚠️ 반드시 이 순서)
+1. `tauri.conf.json` 버전 업데이트 → 커밋 → `git push origin auto`
+2. 그 다음 워크플로우 실행 (`gh workflow run release-auto.yml ...`)
 - Workflow: `release-auto.yml` (main 브랜치)
 - 업데이트 체크: 접미사 `-auto` 필터링으로 수동 버전과 독립
 </claude-mem-context>
